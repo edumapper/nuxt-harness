@@ -17,7 +17,7 @@ A deterministic quality gate for **Nuxt 4** apps, built for teams that ship code
 Every finding explains itself: `❌ what → 💡 why → 🛠 fix → 📖 doc`.
 
 ```text
-  @edumapper/nuxt-harness 0.5.1 — fast gate, 3 files
+  @edumapper/nuxt-harness 0.5.2 — fast gate, 3 files
 
   → ESLint (harness rules).......... FAIL 412ms
     ✗ app/components/ProductCard.vue:4 [arch/no-smart-calls] ❌ useRouter() — navigation in a Presenter
@@ -31,13 +31,13 @@ Every finding explains itself: `❌ what → 💡 why → 🛠 fix → 📖 doc`
 Try it on any Nuxt 4 repository, with nothing installed:
 
 ```bash
-npx --package github:edumapper/nuxt-harness#v0.5.1 nuxt-harness fast --all
+npx --package github:edumapper/nuxt-harness#v0.5.2 nuxt-harness fast --all
 ```
 
 Then adopt it:
 
 ```bash
-npm i -D github:edumapper/nuxt-harness#v0.5.1   # or pnpm / yarn / bun add -d
+npm i -D github:edumapper/nuxt-harness#v0.5.2   # or pnpm / yarn / bun add -d
 ```
 
 ```js
@@ -63,6 +63,11 @@ npx nuxt-harness full --update-baseline      # → nuxt-harness-baseline.json (C
 
 Requirements: Node ≥ 22, a git repository, Nuxt 4 (the `app/` layout, or `srcDir: '.'`).
 Nuxt layers under `layers/` are covered too.
+
+The lint toolchain is a peer dependency, so the harness uses your project's versions and never
+installs its own copies: ESLint `^9.24 || ^10`, `eslint-plugin-vue` `^10`, `vue-eslint-parser`
+`^10` and `@typescript-eslint/*` `^8.12`. `@nuxt/eslint` already brings them; otherwise npm,
+pnpm and bun install the missing peers for you (the no-install `npx`/`bunx` mode included).
 
 ## Commands
 

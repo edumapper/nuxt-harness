@@ -2,10 +2,11 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
+import { ESLint } from 'eslint'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { loadConfig, resolveOptions, sourcePattern } from '../src/config.js'
-import { harness } from '../src/eslint.js'
+import { harness, standalone, typeAware } from '../src/eslint.js'
 
 let root: string | undefined
 
@@ -77,5 +78,20 @@ describe('loadConfig', () => {
     expect(await loadConfig(project({}))).toEqual({})
     expect(await loadConfig(project({ 'nuxt-harness.config.json': '{"i18n":true}' }))).toEqual({ i18n: true })
     expect(await loadConfig(project({ 'nuxt-harness.config.mjs': 'export default { dataComposables: [\'useApi\'] }' }))).toEqual({ dataComposables: ['useApi'] })
+  })
+})
+
+// Rule options must exist in the lowest peer versions too (CI runs this suite on them):
+// an unknown option makes ESLint reject the whole config.
+describe('typeAware — runs with type information', () => {
+  it('reports a non-exhaustive switch over a union', async () => {
+    const cwd = project({
+      'tsconfig.json': '{"compilerOptions":{"strict":true,"noEmit":true},"include":["app/**/*.ts"]}',
+      'app/utils/status.ts': 'type Status = \'a\' | \'b\'\nexport function code(s: Status): number {\n  switch (s) {\n    case \'a\': return 1\n  }\n  return 0\n}\n'
+    })
+    const config = [...await standalone({ root: cwd }), ...typeAware(cwd, { root: cwd })]
+    const eslint = new ESLint({ cwd, overrideConfigFile: true, overrideConfig: config })
+    const [result] = await eslint.lintFiles(['app/utils/status.ts'])
+    expect(result?.messages.map(m => m.ruleId)).toEqual(['@typescript-eslint/switch-exhaustiveness-check'])
   })
 })

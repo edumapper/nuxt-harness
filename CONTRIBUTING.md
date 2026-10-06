@@ -15,6 +15,10 @@ bun run test
 The source is plain ESM JavaScript with JSDoc types (`// @ts-check`), Node ≥ 22. There is no
 build step: what's in `src/` is what ships.
 
+ESLint, the Vue and TypeScript parsers and plugins are **peer dependencies**: the app provides
+them. Keep the ranges in `peerDependencies` honest. A rule or option that needs a newer version
+raises the lower bound there and in the `peers: lowest` CI job.
+
 ## Layout
 
 ```
