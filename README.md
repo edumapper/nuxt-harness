@@ -78,3 +78,7 @@ bun run test   # vitest: rule tests (RuleTester) + static checks + CRAP
 ```
 
 The source is plain ESM JavaScript with JSDoc types. There is no build step, and it runs on Node ≥ 22 and Bun.
+
+## License
+
+[MIT](LICENSE) © Edumapper
