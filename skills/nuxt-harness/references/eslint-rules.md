@@ -1,41 +1,45 @@
 # ESLint rules — `@edumapper/nuxt-harness/eslint`
 
-Source of truth: `src/eslint.js` in [edumapper/nuxt-harness](https://github.com/edumapper/nuxt-harness). This page explains why each rule exists.
+Source of truth: [`src/eslint.js`](../../../src/eslint.js). This page explains why each rule exists.
 All rules are `error` unless noted. Messages follow ❌ what → 💡 why → 🛠 fix → 📖 doc.
+
+Globs below use the Nuxt 4 layout. Every rule also applies inside Nuxt layers
+(`layers/<name>/app/…`), and follows `srcDir: '.'` for apps that kept the Nuxt 3 layout.
+Options are described in [configuration.md](configuration.md).
 
 ## Entry points
 
 | Export | Used by | Contents |
 |---|---|---|
-| `harness()` | the app's `eslint.config.mjs`, spread into `withNuxt(...)` | every rule below except the type-aware ones. It does not redefine the `vue`/`@typescript-eslint` plugins that Nuxt registers. |
-| `typeAware(rootDir)` | the app's `eslint.config.mjs` (full gate only) | rules that need the TypeScript program (`projectService`). They need `.nuxt/` to be meaningful. |
-| `standalone()` | `nuxt-harness fast` | parsers and plugins from the package's own dependencies, plus `harness()`. No `.nuxt/`, no app install. |
+| `harness(options?)` | the app's `eslint.config.mjs`, spread into `withNuxt(...)` | every rule below except the type-aware ones. It does not redefine the `vue`/`@typescript-eslint` plugins that Nuxt registers. |
+| `typeAware(rootDir, options?)` | the app's `eslint.config.mjs` (full gate) | rules that need the TypeScript program (`projectService`). They need `.nuxt/` to be meaningful. |
+| `standalone(options?)` | `nuxt-harness fast` | parsers and plugins from the package's own dependencies, plus `harness()`. No `.nuxt/`, no app install. |
 
 ## Architecture: the 5-layer model
 
 | Rule | Files | Forbids |
 |---|---|---|
-| `arch/no-presenter-in-page` (R0) | `app/pages/**/*.vue` | rendering anything but `Orc*`/`Op*`, HTML, Nuxt built-ins (`Nuxt*`) and NuxtUI atoms (`U*`) |
-| `arch/no-smart-calls` (R1/R2) | Presenters | `useFetch`, `$fetch`, `useQuery`, stores, `useRouter`, `navigateTo`, … |
-| `arch/no-data-calls-in-operator` (R3) | `Op*.vue` | raw data primitives (`$fetch`, `useFetch`, Colada). Call a composable. |
+| `arch/no-presenter-in-page` (R0) <a id="no-presenter-in-page"></a> | `app/pages/**/*.vue` | rendering anything but Orchestrators/Operators, HTML, Vue/Nuxt built-ins (`Nuxt*`) and Nuxt UI atoms (`U*`). Directory-prefixed (`<ShopOrcCart>`), lazy (`<LazyOrcCart>`) and kebab-case names are recognized. |
+| `arch/no-smart-calls` (R1/R2) <a id="no-smart-calls"></a> | Presenters | stores (`use*Store`), `useRouter`/`useRoute`/`navigateTo`, `useFetch`/`useAsyncData`/`$fetch`, query primitives (`useQuery`, `useMutation`, …) and the app's `dataComposables` |
+| `arch/no-data-calls-in-operator` (R3) <a id="no-data-calls-in-operator"></a> | `Op*.vue` | raw data primitives (`$fetch`, `useFetch`, `useAsyncData`, `useQuery`, …). Call a composable. |
 | `arch/no-reverse-layer` (R4) | components | upward imports: Presenter → Op/Orc, Op → Orc |
 | `arch/no-server-ui-import` | `server/**` | importing Vue components or pages |
 
 Template rules must use `context.sourceCode.parserServices.defineTemplateBodyVisitor`. A top-level
-`VElement`/`VAttribute` visitor is never called. Three rules shipped that way and silently passed
-every file (see `test/rules.test.ts`).
+`VElement`/`VAttribute` visitor is never called; `test/rules.test.ts` guards every template rule
+with an invalid case.
 
 ## Locality
 
 | Rule | Files | Forbids |
 |---|---|---|
-| `@typescript-eslint/no-restricted-imports` | `app/**` | `~~/server/**` except `~~/server/utils/validators/**` (type imports allowed) |
+| `@typescript-eslint/no-restricted-imports` | `app/**` | `~~/server/**` (type imports allowed; exceptions via `allowServerImportsInApp`). Share schemas and types through `shared/`. |
 | | `server/**` | `~/**`, `~~/app/**`, `#app`, `#components` |
 | | `shared/**` | app and server code: `shared/` stays isomorphic |
 | | all | event buses: `mitt`, `tiny-emitter`, `eventemitter3`, `events` |
-| `no-restricted-syntax` | `app/**` | `navigateTo('/…')` / `` navigateTo(`/…`) ``. Use `localePath({ name })`. |
+| `no-restricted-syntax` (only with i18n) | `app/**` | `navigateTo('/…')` / `` navigateTo(`/…`) ``. Use `localePath({ name })`. |
 | `arch/no-provide-inject` <a id="no-provide-inject"></a> | `app/**` | Vue `provide()`/`inject()`/`vueApp.provide`. Pass props down or share a composable. Nuxt plugin `provide` stays allowed. |
-| `arch/no-auth-gate-outside-middleware` <a id="no-auth-gate-outside-middleware"></a> | components, pages, layouts | a branch that tests `useSupabaseUser()`/`useSupabaseSession()` and redirects. Access policy lives in `app/middleware`. Displaying the user is fine. |
+| `arch/no-auth-gate-outside-middleware` <a id="no-auth-gate-outside-middleware"></a> | components, pages, layouts | a branch that reads an auth composable (`authComposables`, default `useUserSession`, `useAuth`, `useSupabaseUser`, `useSupabaseSession`) and redirects. Access policy lives in route middleware. Displaying the user is fine. |
 | `arch/no-bare-navigate` | `app/**` | `navigateTo()` that is not awaited or returned, unless a comment on the line above (or at the end of the line) explains why; `router.push/replace/go` |
 
 ## Structural invariants & illegal states
@@ -49,6 +53,7 @@ every file (see `test/rules.test.ts`).
 | `arch/max-boolean-props` <a id="max-boolean-props"></a> | 3+ boolean props encode 2^N states, most of them illegal. Use one discriminated union prop. |
 | `@typescript-eslint/switch-exhaustiveness-check` (type-aware) | adding a union member must break every switch that forgot it |
 | `@typescript-eslint/no-unnecessary-condition` (type-aware) | a condition the types prove constant is dead code or a lying type |
+| `@typescript-eslint/no-unnecessary-type-assertion` (type-aware) | a cast the types already satisfy hides the real type |
 | `@typescript-eslint/no-unsafe-return` (type-aware) | returning `any` leaks it into every caller |
 
 ## Guards & reactivity
@@ -57,12 +62,12 @@ Principle: use early returns for states that really happen. Don't check states t
 
 | # | Rule | Enforced by |
 |---|---|---|
-| R1 | No checks for impossible states (`?.`, `??`, `if (!x)` on a non-nullable). If the type is wrong, fix the type. | `@typescript-eslint/no-unnecessary-condition`, `no-unnecessary-type-assertion` (type-aware) |
-| R2 | A guard with more than 2 operands goes into a named `computed` or function, ideally one returning the blocking reason (`submitBlock`). | `arch/max-condition-operands` <a id="max-condition-operands"></a> (counts every `&&`/`||` leaf, including right-nested `a \|\| (b && c)`; `??` is not counted) |
-| R3 | Exit early. No `else` after a return, no deep nesting. | `no-else-return` (`allowElseIf: false`), `max-depth: 2` |
-| R4 | Gates live with their owner: auth checks and redirects go in `app/middleware`. | `arch/no-auth-gate-outside-middleware` |
-| R5 | A `v-if`/`v-else-if`/`v-show` with more than 2 operands becomes a computed. | `arch/max-condition-operands` |
-| R6 | Async handlers set the lock before the first `await`. | code review, not lintable |
+| G1 | No checks for impossible states (`?.`, `??`, `if (!x)` on a non-nullable). If the type is wrong, fix the type. | `@typescript-eslint/no-unnecessary-condition`, `no-unnecessary-type-assertion` (type-aware) |
+| G2 | A guard with more than 2 operands goes into a named `computed` or function, ideally one returning the blocking reason. | `arch/max-condition-operands` <a id="max-condition-operands"></a> (counts every `&&`/`\|\|` leaf, including right-nested `a \|\| (b && c)`; `??` is not counted) |
+| G3 | Exit early. No `else` after a return, no deep nesting. | `no-else-return` (`allowElseIf: false`), `max-depth: 2` |
+| G4 | Gates live with their owner: auth checks and redirects go in route middleware. | `arch/no-auth-gate-outside-middleware` |
+| G5 | A `v-if`/`v-else-if`/`v-show` with more than 2 operands becomes a computed. | `arch/max-condition-operands` |
+| G6 | Async handlers set the lock before the first `await`. | code review, not lintable |
 | | No more than 3 watchers per file. Derived state is a `computed`; a reaction to a user action goes in that handler; prop sync uses `defineModel`. | `arch/max-watchers` <a id="max-watchers"></a> |
 | | Every `<ClientOnly>` is directly preceded by an HTML comment (4+ words) saying why the subtree can't render on the server. | `arch/client-only-needs-reason` <a id="client-only-needs-reason"></a> |
 
@@ -74,35 +79,45 @@ Principle: use early returns for states that really happen. Don't check states t
 | `no-empty` (incl. catch) | `catch {}` swallows errors |
 | `complexity: 20` | the C in CRAP. Above it, split the function. |
 | `max-params: 4` | the cheapest SRP smell to detect (off in tests) |
+| `arch/no-figma-asset-url` | expiring Figma MCP asset URLs (`figma.com/api/mcp/asset/…`, `localhost:3845/assets/…`) ship as broken images |
 
-## Design system (`app/**/*.vue`)
+## Design system (opt-in)
 
-| Rule | Forbids |
+Off by default — the harness ships no design tokens. Enable with `designSystem` in
+[configuration](configuration.md#design-system). Applies to `app/**/*.vue`.
+
+| Rule | Enabled by | Forbids |
+|---|---|---|
+| `arch/no-hardcoded-color` | `designSystem` (unless `hardcodedColors: false`) | hex/rgb/hsl in `class`, `style` or string literals. Use token classes or `var(--color-*)`. |
+| `arch/no-off-palette-color-class` <a id="no-off-palette-color-class"></a> | `designSystem.palettes` | Tailwind built-in palettes (`gray`, `sky`, …) not listed in `palettes`. Custom palettes are never flagged. |
+| `arch/no-nested-border-box` (warn) | `designSystem` (unless `nestedBorderBox: false`) | bordered, rounded boxes inside other bordered surfaces (`surfaceComponents`, default Nuxt UI cards and overlays) |
+
+## Static checks (not ESLint)
+
+Plain file scans in [`src/checks.js`](../../../src/checks.js), run by both gates:
+
+| Check | Reports |
 |---|---|
-| `arch/no-hardcoded-color` | hex/rgb/hsl in templates, `style` or string literals. Use palette classes or `var(--color-*)`. |
-| `arch/no-off-palette-color-class` | Tailwind palettes outside `app/assets/css/main.css` (`gray`, `neutral`, `sky`, …) |
-| `arch/no-nested-border-box` (warn) | bordered, rounded boxes inside other bordered surfaces |
-| `arch/no-figma-asset-url` | expiring Figma MCP asset URLs |
+| Import hygiene | `../../` deep relative imports, `./index` barrel imports |
+| Escape hatches | `@ts-ignore`/`@ts-nocheck`/`@ts-expect-error`; blanket `eslint-disable`; any disable of a harness rule; other disables without `-- reason` |
+| Console hygiene | `console.log/debug/info` outside tests (`warn`/`error` allowed) |
+| Secret scan | Stripe keys, hardcoded passwords/API keys/tokens, long base64 literals |
+| Unvalidated `readBody` | `readBody()` in `server/` whose result isn't `.parse()`d within 3 lines. Prefer `readValidatedBody`. |
+| i18n keys | static `t('a.b')` keys missing from any JSON file in `i18n/locales/` (or `locales/`) |
+| TODO markers | `TODO`/`FIXME`/`HACK` (warning) |
 
 ## Considered and not adopted (yet)
 
-These were measured on a production Nuxt app:
-
-- `exactOptionalPropertyTypes`: 144 type errors. Too many to fix in the harness PR, and TS errors can't be bulk-suppressed.
-- `experimental.typedPages`: 3 errors, two of them `NuxtLinkLocale` receiving an already-localized path. Fix those first.
-- `strict-boolean-expressions`: 338 hits, mostly style. `no-unsafe-assignment/call/member-access`: about 250 hits, dominated by "type could not be resolved" noise from auto-imports.
+- `exactOptionalPropertyTypes`: valuable, but produces many type errors on existing apps, and TS errors can't be bulk-suppressed. Worth enabling on a new app.
+- `strict-boolean-expressions`: mostly style noise. `no-unsafe-assignment/call/member-access`: noisy on auto-imports when types can't be resolved.
 - dependency-cruiser: Nuxt auto-imports components and composables, so the import graph it sees is incomplete. The layer and locality rules above cover the edges that exist as imports.
-- openapi-typescript: the API contract here is Zod + `z.infer`, not OpenAPI.
 
-## Error Message Rights Matrix
+## Rights matrix
 
-What ESLint guarantees:
-
-| Action                         | Presenter | Operator | Orchestrator | Page     |
-|-------------------------------|-----------|----------|--------------|----------|
-| Import a store                | ✕ R1      | ✓        | ✓            | ✓ read   |
-| Call `useRouter()`/`navigateTo()` | ✕ R4  | ✓        | ✓            | ✓        |
-| Call `useFetch()`/`useAsyncData()` | ✕ R4  | ✕ R3     | ✓            | ✕        |
-| Access `localStorage`          | ✕ R2      | ✓        | ✓            | ✕        |
-| Render a Presenter directly    | ✓         | ✓        | ✓            | ✕ R0     |
-| `defineProps` + `defineEmits`  | ✓ only    | ✓        | ✓            | ✓        |
+| Action | Presenter | Operator | Orchestrator | Page |
+|---|---|---|---|---|
+| Use a store | ✕ R1 | ✓ | ✓ | ✓ read |
+| `useRouter()` / `navigateTo()` | ✕ R2 | ✓ | ✓ | ✓ |
+| `useFetch()` / `useAsyncData()` / `$fetch` | ✕ R2 | ✕ R3 | via a composable | ✕ |
+| Render a Presenter | ✓ | ✓ | ✓ | ✕ R0 |
+| Import an Op / Orc | ✕ R4 | Op only | ✓ | ✓ |

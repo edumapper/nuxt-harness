@@ -1,22 +1,22 @@
 /**
- * ESLint Rule: no-hardcoded-color
+ * ESLint Rule: no-hardcoded-color (opt-in, `designSystem.hardcodedColors`)
  *
- * Disallows hardcoded color values (hex, rgb, hsl) in Vue templates and
- * TypeScript files. All colors must be defined as CSS custom properties in
- * app/assets/css/main.css and used via Tailwind utility classes or var(--color-*).
+ * Disallows hardcoded color values (hex, rgb, hsl) in Vue templates and scripts.
+ * Colors come from the design system: theme tokens used through Tailwind
+ * utility classes or CSS custom properties (var(--color-*)).
  *
  * ─── Why this matters ───────────────────────────────────────────────────────
  *
- * Hardcoded color values (#272734, rgb(24,25,29)) bypass the design system
+ * Hardcoded color values (#1f2937, rgb(24,25,29)) bypass the design system
  * entirely. They cannot be updated globally, do not participate in dark mode
  * toggling, and are invisible to design tools. The design system palette is
  * the single source of truth — any value not defined there is improvisation.
  *
  * What this catches:
- *   - style="color: #272734"           → hex in style attribute
- *   - class="bg-[#f7f3f0]"             → Tailwind arbitrary hex value
+ *   - style="color: #1f2937"           → hex in style attribute
+ *   - class="bg-[#f9fafb]"             → Tailwind arbitrary hex value
  *   - class="bg-[rgb(24,25,29)]"       → Tailwind arbitrary rgb value
- *   - const color = '#272734'          → hex literal in TS/JS
+ *   - const color = '#1f2937'          → hex literal in TS/JS
  *
  * What this does NOT catch (out of scope for first pass):
  *   - Dynamic :class / :style bindings with computed color strings
@@ -26,10 +26,10 @@
  */
 
 const COLOR_PATTERNS = [
-  /#[0-9a-fA-F]{3,8}\b/, // hex: #fff, #272734, #ffffffcc
+  /#[0-9a-fA-F]{3,8}\b/, // hex: #fff, #1f2937, #ffffffcc
   /\brgba?\s*\(/, // rgb() / rgba() // cspell:ignore brgba
   /\bhsla?\s*\(/, // hsl() / hsla() // cspell:ignore bhsla
-  /\[#[0-9a-fA-F]/ // Tailwind arbitrary hex: [#fff], [#272734]
+  /\[#[0-9a-fA-F]/ // Tailwind arbitrary hex: [#fff], [#1f2937]
 ]
 
 function containsHardcodedColor(str) {
@@ -47,9 +47,9 @@ export default {
     messages: {
       hardcodedColor: [
         '❌ Hardcoded color value found.',
-        '💡 Colors must be defined as CSS custom properties in app/assets/css/main.css',
-        '   and used via Tailwind utility classes.',
-        '🛠 Replace with a design system token (e.g. bg-zinc-100, text-brand-500)',
+        '💡 Colors come from the design system: theme tokens, used through',
+        '   utility classes or CSS custom properties.',
+        '🛠 Replace with a design token class (e.g. text-primary, bg-muted)',
         '   or a CSS variable reference: var(--color-*)'
       ].join('\n')
     }

@@ -1,0 +1,25 @@
+name: Bug report
+description: The gate crashed, or reported something wrong
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: The command you ran and its output (or the relevant part of .harness/report.json).
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: The smallest file (and path, e.g. app/components/OpX.vue) that triggers it.
+      render: vue
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: nuxt-harness, Nuxt, Node, package manager
+      placeholder: nuxt-harness 0.5.0, Nuxt 4.6.0, Node 22, pnpm 10
+    validations:
+      required: true

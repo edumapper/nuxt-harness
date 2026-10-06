@@ -20,9 +20,9 @@
  * ─── What counts as an "outer surface" ──────────────────────────────────────
  *
  * 1. A border box element in the same template (same-file static nesting)
- * 2. A NuxtUI surface component: UModal, UCard, USlideover, UDrawer, …
- *    These always provide a bordered surface even though their internal
- *    class attributes are not visible in the consuming template.
+ * 2. A surface component (option `surfaceComponents`, default: the Nuxt UI
+ *    UCard, UModal, USlideover, UDrawer, …). These always provide a bordered
+ *    surface even though their internal classes are not visible in the template.
  *
  * ─── What this catches ───────────────────────────────────────────────────────
  *
@@ -42,8 +42,8 @@
  *
  * - Only static `class="..."` attributes are analyzed; `:class` bindings
  *   are not checked (too complex for the first pass)
- * - Only the NuxtUI surface components listed below are recognized as
- *   implicit outer boxes; custom wrappers are not
+ * - Only the configured surface components are recognized as implicit
+ *   outer boxes; other custom wrappers are not
  *
  * Targets: app/**\/*.vue
  */
@@ -59,17 +59,7 @@
 // Native form controls always have visible borders as affordance — never flag them.
 const FORM_CONTROLS = new Set(['input', 'select', 'textarea', 'button'])
 
-const SURFACE_COMPONENTS = new Set([
-  'UCard',
-  'UModal',
-  'USlideover',
-  'UDrawer',
-  'UPopover',
-  'UAlert',
-  'UTooltip',
-  'UContextMenu',
-  'UDropdownMenu'
-])
+import { DEFAULT_SURFACE_COMPONENTS } from '../config.js'
 
 /**
  * Returns true if the class string describes a visible, full-perimeter border
@@ -105,21 +95,22 @@ function isBorderBox(classStr) {
 
 /**
  * Walks up the VElement ancestor chain from a VElement node and returns the
- * first outer surface found — either a NuxtUI surface component or a border
+ * first outer surface found — either a surface component or a border
  * box element whose class we already recorded. Returns null if none found.
  *
  * @param {object} element   — the VElement to start from (walk its ancestors)
  * @param {Map<object, string>} classMap  — map from VElement node → its static class string
+ * @param {Set<string>} surfaces — component names that render a bordered surface
  */
-function findOuterSurface(element, classMap) {
+function findOuterSurface(element, classMap, surfaces) {
   let current = element.parent
 
   while (current) {
     if (current.type === 'VElement') {
       const name = current.rawName
 
-      // Known NuxtUI surface component
-      if (SURFACE_COMPONENTS.has(name)) {
+      // Known surface component
+      if (surfaces.has(name)) {
         return { kind: 'component', name }
       }
 
@@ -143,7 +134,11 @@ export default {
       description: 'Disallow bordered containers nested inside other bordered surfaces (Russian doll effect)',
       category: 'Design System'
     },
-    schema: [],
+    schema: [{
+      type: 'object',
+      properties: { surfaceComponents: { type: 'array', items: { type: 'string' } } },
+      additionalProperties: false
+    }],
     messages: {
       nestedBorderBox: [
         '❌ Border box nested inside {{outer}} — avoid the Russian doll effect.',
@@ -158,6 +153,7 @@ export default {
     // ESLint v10 moved parserServices to context.sourceCode.parserServices
     const { defineTemplateBodyVisitor } = context.sourceCode?.parserServices ?? context.parserServices ?? {}
     if (typeof defineTemplateBodyVisitor !== 'function') return {}
+    const surfaces = new Set(context.options[0]?.surfaceComponents ?? DEFAULT_SURFACE_COMPONENTS)
     // Maps each VElement node to its static class string.
     // Built during traversal so ancestor lookups are O(1).
     const classMap = new Map()
@@ -185,7 +181,7 @@ export default {
         // Native form controls always need visible borders — skip them.
         if (FORM_CONTROLS.has(element.rawName)) return
 
-        const outer = findOuterSurface(element, classMap)
+        const outer = findOuterSurface(element, classMap, surfaces)
         if (!outer) return
 
         const outerLabel = outer.kind === 'component'

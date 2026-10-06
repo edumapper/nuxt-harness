@@ -1,46 +1,49 @@
-# @edumapper/nuxt-harness
+# nuxt-harness
 
-Deterministic quality gate for Nuxt 4 apps. It covers the 5-layer architecture rules (Page → Orc → Op →
-Presenter → Composable), locality, guard and illegal-state rules, static checks, and CRAP. One command
-gives two outputs: human text on stdout, and `.harness/report.json` for agents and CI.
+[![CI](https://github.com/edumapper/nuxt-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/edumapper/nuxt-harness/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## Commands
+A deterministic quality gate for **Nuxt 4** apps, built for teams that ship code with AI agents.
 
-```bash
-nuxt-harness fast [files…] [--all] [--json]    # changed files (vs origin/HEAD merge-base + untracked), ~1 s
-nuxt-harness full [--update-baseline] [--json] # everything; needs the app installed
-nuxt-harness hook                              # Claude Code PostToolUse: gate the edited file (exit 2 + stderr)
-nuxt-harness stop                              # Claude Code Stop: the turn can't end while changed files fail
+- **Architecture rules**: a 5-layer component model (Page → Orchestrator → Operator → Presenter →
+  Composable), enforced by ESLint, so smart components can't quietly grow into monoliths.
+- **Guard and locality rules**: early returns, named conditions, `app` ↛ `server` imports,
+  awaited `navigateTo`, auth gates in middleware, no `provide`/`inject`.
+- **A gate the agent can't switch off**: `@ts-ignore` and `eslint-disable` of harness rules fail the gate.
+- **Fast mode for agents**: lints changed files in ~1 s, without the app's `node_modules` or `.nuxt/`.
+- **Claude Code hooks**: feedback after every edit, and a turn can't end while changed files fail.
+- **Ratchets for legacy code**: existing violations are recorded once; the count can only go down.
+
+Every finding explains itself: `❌ what → 💡 why → 🛠 fix → 📖 doc`.
+
+```text
+  @edumapper/nuxt-harness 0.5.0 — fast gate, 3 files
+
+  → ESLint (harness rules).......... FAIL 412ms
+    ✗ app/components/ProductCard.vue:4 [arch/no-smart-calls] ❌ useRouter() — navigation in a Presenter
+      💡 A Presenter doesn't decide where to go. It emits an event,
+         and the Operator (Op*.vue) or Orchestrator (Orc*.vue) decides what to do.
+      🛠 Replace with: emit('select', item)
 ```
 
-`fast` needs neither the app's `node_modules` nor `.nuxt/`. It parses with its own dependencies
-(eslint, vue-eslint-parser, typescript-eslint), so an agent in a fresh worktree runs:
+## Quick start
+
+Try it on any Nuxt 4 repository, with nothing installed:
 
 ```bash
-bunx --package github:edumapper/nuxt-harness#v<version> nuxt-harness fast
+npx --package github:edumapper/nuxt-harness#v0.5.0 nuxt-harness fast --all
 ```
 
-| Check | fast | full |
-|---|---|---|
-| Import hygiene, escape hatches, console, secrets, unvalidated `readBody`, i18n keys, TODO (warn) | ✓ | ✓ |
-| Harness ESLint rules (layers, locality, guards, Vue contracts, design system, complexity) | ✓ | ✓ |
-| `nuxt typecheck`, type-aware ESLint (app config), knip, cspell, jscpd, vitest + coverage | | ✓ |
-| CRAP ≤ 30 per `.ts` function | | ✓ |
-
-Rules and their rationale: [`skills/nuxt-harness/references/eslint-rules.md`](skills/nuxt-harness/references/eslint-rules.md).
-The agent skill is [`skills/nuxt-harness/`](skills/nuxt-harness/SKILL.md). Consumers symlink it from
-`node_modules/@edumapper/nuxt-harness/skills/nuxt-harness`, so it always matches the installed version.
-
-## Adopting in a Nuxt repo
+Then adopt it:
 
 ```bash
-bun add -d github:edumapper/nuxt-harness#v<version> @vitest/coverage-v8
+npm i -D github:edumapper/nuxt-harness#v0.5.0   # or pnpm / yarn / bun add -d
 ```
 
 ```js
-// eslint.config.mjs
-import withNuxt from './.nuxt/eslint.config.mjs'
+// eslint.config.mjs (with @nuxt/eslint)
 import { harness, typeAware } from '@edumapper/nuxt-harness/eslint'
+import withNuxt from './.nuxt/eslint.config.mjs'
 
 export default withNuxt(...harness(), ...typeAware(import.meta.dirname))
 ```
@@ -50,44 +53,111 @@ export default withNuxt(...harness(), ...typeAware(import.meta.dirname))
 { "scripts": { "check": "nuxt-harness full", "check:fast": "nuxt-harness fast" } }
 ```
 
-```jsonc
-// .claude/settings.json
-{ "hooks": {
-  // after each edit: feedback lands before the agent moves on
-  "PostToolUse": [{ "matcher": "Edit|Write|MultiEdit", "hooks": [
-    { "type": "command", "command": "node_modules/.bin/nuxt-harness hook", "timeout": 60 }
-  ] }],
-  // end of turn: every file changed on the branch (Bash edits included) must pass;
-  // blocks at most 3 times in a row per session, then warns the user instead
-  "Stop": [{ "hooks": [
-    { "type": "command", "command": "node_modules/.bin/nuxt-harness stop", "timeout": 120 }
-  ] }]
-} }
-```
-
-Add `.harness` to `.gitignore`. Record existing violations once. After that the counts can only go down:
+Add `.harness/` to `.gitignore`. On an existing app, record current violations once — after
+that, the counts can only go down:
 
 ```bash
-bunx eslint . --suppress-all              # → eslint-suppressions.json (read by both eslint and `fast`)
-bunx nuxt-harness full --update-baseline  # → nuxt-harness-baseline.json (CRAP)
+npx eslint . --suppress-all                  # → eslint-suppressions.json (read by eslint and `fast`)
+npx nuxt-harness full --update-baseline      # → nuxt-harness-baseline.json (CRAP)
 ```
 
-## Releasing
+Requirements: Node ≥ 22, a git repository, Nuxt 4 (the `app/` layout, or `srcDir: '.'`).
+Nuxt layers under `layers/` are covered too.
 
-1. Bump `version` in `package.json` and commit to `main`.
-2. Push the tag `v<version>`. CI checks that the tag matches the version and runs the tests.
-3. Consumers pin the tag (`github:edumapper/nuxt-harness#v<version>`). In the host app, the
-   `update-nuxt-harness` workflow picks up a new tag, bumps the dependency, runs the full gate, and opens a PR.
+## Commands
 
-## Developing
+```bash
+nuxt-harness fast [files…] [--all] [--json]    # changed files (vs origin/HEAD merge-base + untracked)
+nuxt-harness full [--update-baseline] [--json] # every file + the app's toolchain; needs the app installed
+nuxt-harness hook                              # Claude Code PostToolUse: gate the edited file
+nuxt-harness stop                              # Claude Code Stop: the turn can't end while changed files fail
+```
+
+| Check | fast | full |
+|---|---|---|
+| Import hygiene, escape hatches, console, secrets, unvalidated `readBody`, i18n keys, TODO (warn) | ✓ | ✓ |
+| Harness ESLint rules (layers, locality, guards, Vue contracts, complexity, opt-in design system) | ✓ | ✓ |
+| `nuxt typecheck`, the app's ESLint config (type-aware), knip, cspell, jscpd, vitest + coverage | | ✓ |
+| CRAP ≤ 30 per `.ts` function | | ✓ |
+
+`full` runs the optional tools only when the app has configured them (`knip.json`,
+`cspell.json`, `.jscpd.json`, `vitest.config.*`), through the app's package manager. Both
+commands write `.harness/report.json` for agents and CI. Set `NUXT_HARNESS_BASE` to compare
+`fast` against another branch than `origin/HEAD`.
+
+## Configuration
+
+None is required. Options cover what depends on your stack — put them in
+`nuxt-harness.config.mjs` at the repo root:
+
+```js
+/** @type {import('@edumapper/nuxt-harness/eslint').HarnessOptions} */
+export default {
+  i18n: true,                          // default: on when @nuxtjs/i18n is installed
+  authComposables: ['useUserSession'], // checking these + redirecting belongs in middleware
+  dataComposables: ['useApiQuery'],    // your data-layer wrappers, banned in Presenters
+  designSystem: {                      // opt-in; the harness ships no design tokens
+    palettes: ['zinc', 'red', 'green']
+  }
+}
+```
+
+The design-system rules (hardcoded colors, allowed Tailwind palettes, nested bordered boxes)
+are **off** until you enable them. See [configuration](skills/nuxt-harness/references/configuration.md)
+for every option and how to share tokens from a package.
+
+## Claude Code
+
+```jsonc
+// .claude/settings.json
+{
+  "hooks": {
+    // after each edit: feedback lands before the agent moves on
+    "PostToolUse": [{ "matcher": "Edit|Write|MultiEdit", "hooks": [
+      { "type": "command", "command": "node_modules/.bin/nuxt-harness hook", "timeout": 60 }
+    ] }],
+    // end of turn: every file changed on the branch (Bash edits included) must pass;
+    // blocks at most 3 times in a row per session, then warns the user instead
+    "Stop": [{ "hooks": [
+      { "type": "command", "command": "node_modules/.bin/nuxt-harness stop", "timeout": 120 }
+    ] }]
+  }
+}
+```
+
+The package ships an agent skill in [`skills/nuxt-harness/`](skills/nuxt-harness/SKILL.md): the
+architecture, the rules, and lint-clean reference implementations of each layer. Link it from
+`node_modules/@edumapper/nuxt-harness/skills/nuxt-harness` into `.claude/skills/` (or your
+agent's skills directory) so it always matches the installed version.
+
+Other agents can use the same gate: run `nuxt-harness fast` after each edit and read
+`.harness/report.json`.
+
+## The architecture in one table
+
+| File | Layer | Data access | Stores | Navigation |
+|---|---|---|---|---|
+| `app/pages/**/*.vue` | Page — assembles Orc/Op | — | read | ✓ |
+| `app/components/**/Orc*.vue` | Orchestrator — the feature's brain | via composables | ✓ | ✓ |
+| `app/components/**/Op*.vue` | Operator — wires Presenters | composables only | ✓ | ✓ |
+| `app/components/**/*.vue` | Presenter — props in, events out | ✕ | ✕ | ✕ |
+| `app/composables/use*.ts` | Composable — reusable logic | ✓ | ✓ | — |
+
+- [Architecture](skills/nuxt-harness/references/architecture.md): the model, its rules and an audit method
+- [Rules](skills/nuxt-harness/references/eslint-rules.md): every rule and why it exists
+- [Gold standards](skills/nuxt-harness/references/gold-standards.md): reference code for each layer
+- [Example app](examples/basic): a minimal Nuxt 4 app that passes the gate
+
+## Contributing
+
+Issues and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). The source is
+plain ESM JavaScript with JSDoc types: no build step.
 
 ```bash
 bun install
-bun run test   # vitest: rule tests (RuleTester) + static checks + CRAP
+bun run test
 ```
-
-The source is plain ESM JavaScript with JSDoc types. There is no build step, and it runs on Node ≥ 22 and Bun.
 
 ## License
 
-[MIT](LICENSE) © Edumapper
+[MIT](LICENSE)

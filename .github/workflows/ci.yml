@@ -12,15 +12,22 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [22, 24]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version: ${{ matrix.node }}
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6  # v2.2.0
 
       - name: Tag matches package version
         if: startsWith(github.ref, 'refs/tags/')
         run: |
-          version="$(bun -p "require('./package.json').version")"
+          version="$(node -p "require('./package.json').version")"
           test "${GITHUB_REF_NAME}" = "v${version}" \
             || { echo "::error::tag ${GITHUB_REF_NAME} != v${version}"; exit 1; }
 
@@ -32,8 +39,15 @@ jobs:
       - name: Smoke test packed tarball
         run: |
           npm pack --pack-destination "$RUNNER_TEMP"
-          mkdir -p "$RUNNER_TEMP/app/app/components" && cd "$RUNNER_TEMP/app" && git init -q
+          tarball="$(ls "$RUNNER_TEMP"/edumapper-nuxt-harness-*.tgz)"
+
+          # The example app passes the gate as-is.
+          cp -r examples/basic "$RUNNER_TEMP/example" && cd "$RUNNER_TEMP/example" && git init -q
+          npx --yes --package="$tarball" nuxt-harness fast --all
+
+          # A violation fails it.
+          mkdir -p "$RUNNER_TEMP/bad/app/components" && cd "$RUNNER_TEMP/bad" && git init -q
           printf '<script setup lang="ts">\nconst v: any = 1\n</script>\n' > app/components/Bad.vue
-          if npx --yes --package="$RUNNER_TEMP"/edumapper-nuxt-harness-*.tgz nuxt-harness fast --all; then
+          if npx --yes --package="$tarball" nuxt-harness fast --all; then
             echo "::error::fast gate passed on a file with a violation"; exit 1
           fi

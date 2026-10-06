@@ -3,8 +3,8 @@
  *
  * Figma MCP returns temporary image URLs (`figma.com/api/mcp/asset/<id>`, or
  * `localhost:3845/assets/<id>` from the desktop app). They expire within days
- * and ship as broken images. Use useEmojiUrl() for emojis; upload anything
- * else to the Bunny CDN.
+ * and ship as broken images. Download the asset into public/ or upload it to
+ * your own storage/CDN.
  *
  * Scans raw source text so templates, scripts and styles are all covered
  * with one regex pass per file.
@@ -18,7 +18,7 @@ export default {
     docs: { description: 'Disallow expiring Figma MCP asset URLs' },
     schema: [],
     messages: {
-      figmaAsset: 'Figma MCP asset URLs expire. Use useEmojiUrl() for emojis, or upload the file to the CDN.'
+      figmaAsset: 'Figma MCP asset URLs expire within days. Download the asset into public/ or upload it to your own storage/CDN.'
     }
   },
   create(context) {

@@ -46,14 +46,15 @@ export function functionCoverage(cov, line) {
 /**
  * @param {string} root
  * @param {string[]} files relative paths (.ts/.js only — components are covered by the layer rules, not unit tests)
- * @param {string} coverageFile
+ * @param {import('./config.js').HarnessOptions} [options]
+ * @param {string} [coverageFile]
  * @returns {Promise<Finding[]>}
  */
-export async function crapFindings(root, files, coverageFile = join(root, '.harness', 'coverage', 'coverage-final.json')) {
+export async function crapFindings(root, files, options, coverageFile = join(root, '.harness', 'coverage', 'coverage-final.json')) {
   /** @type {Record<string, FileCoverage>} */
   const coverage = existsSync(coverageFile) ? JSON.parse(readFileSync(coverageFile, 'utf8')) : {}
   const targets = files.filter(f => /\.[jt]s$/.test(f) && !/\.(test|spec)\.[jt]s$/.test(f))
-  const results = await lintFiles(root, targets, { complexity: ['error', 0] })
+  const results = await lintFiles(root, targets, { options, extraRules: { complexity: ['error', 0] } })
   /** @type {Finding[]} */
   const findings = []
   for (const result of results) {

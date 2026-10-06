@@ -24,6 +24,7 @@ function lines(ctx, file) {
 }
 
 const isTest = (/** @type {string} */ f) => /\.(test|spec)\.[jt]s$/.test(f)
+const SERVER_SIDE = /^(?:layers\/[^/]+\/)?(?:server|shared|modules)\//
 
 /**
  * @param {string} name
@@ -41,7 +42,7 @@ const BARREL_IMPORT = /from ['"]\.\.?\/?index['"]/
 export const importHygiene = check('Import hygiene', function* (ctx) {
   for (const file of ctx.files) {
     for (const [i, line] of lines(ctx, file).entries()) {
-      if (DEEP_RELATIVE.test(line)) yield { file, line: i + 1, severity: 'error', message: `deep relative import — use ~/, ~~/ or #shared: ${line.trim()}` }
+      if (DEEP_RELATIVE.test(line)) yield { file, line: i + 1, severity: 'error', message: `deep relative import — use an alias (~/, ~~/, #shared): ${line.trim()}` }
       if (BARREL_IMPORT.test(line)) yield { file, line: i + 1, severity: 'error', message: `barrel import — import the module directly: ${line.trim()}` }
     }
   }
@@ -86,7 +87,7 @@ export const consoleHygiene = check('Console hygiene', function* (ctx) {
     if (isTest(file)) continue
     for (const [i, line] of lines(ctx, file).entries()) {
       if (CONSOLE.test(line) && !line.trim().startsWith('//')) {
-        yield { file, line: i + 1, severity: 'error', message: `${line.trim()} — use evlog: useLogger(event).set({…}) in server routes, log.info() in components` }
+        yield { file, line: i + 1, severity: 'error', message: `${line.trim()} — remove it, or log through the app's logger (console.warn/error stay allowed)` }
       }
     }
   }
@@ -109,23 +110,24 @@ export const secretScan = check('Secret scan', function* (ctx) {
       const trimmed = line.trim()
       if (trimmed.startsWith('//') || trimmed.startsWith('#')) continue
       for (const { pattern, label } of SECRET_PATTERNS) {
-        if (pattern.test(line)) yield { file, line: i + 1, severity: 'error', message: `${label}: ${trimmed.slice(0, 60)} — move it to the secret manager` }
+        if (pattern.test(line)) yield { file, line: i + 1, severity: 'error', message: `${label}: ${trimmed.slice(0, 60)} — read it from runtimeConfig / an environment variable` }
       }
     }
   }
 })
 
 // ─── Unvalidated readBody ───────────────────────────────────────────────────
-// Every readBody()/readJsonBody() result must reach .safeParse()/.parse() on the
-// same line or within the next few lines — otherwise the server trusts `any`.
+// Every readBody() result must reach .safeParse()/.parse() on the same line or within
+// the next few lines — otherwise the server trusts `any`. h3's readValidatedBody(event,
+// schema.parse) validates in one call and is never flagged.
 const BODY_PARSE_LOOKAHEAD = 3
-const READ_BODY = /\b(readBody|readJsonBody)\s*\(/
-const ASSIGNED = /\b(?:const|let)\s+(\w+)\s*=\s*await\s+(?:readBody|readJsonBody)\s*\(/
+const READ_BODY = /\b(readBody)\s*\(/
+const ASSIGNED = /\b(?:const|let)\s+(\w+)\s*=\s*await\s+readBody\s*\(/
 const PARSED = /safeParse\s*\(|\.parse\s*\(/
 
 export const unvalidatedReadBody = check('Unvalidated readBody', function* (ctx) {
   for (const file of ctx.files) {
-    if (!file.startsWith('server/') || !file.endsWith('.ts') || file.endsWith('read-json-body.ts')) continue
+    if (!/(?:^|\/)server\//.test(file) || !file.endsWith('.ts')) continue
     const src = lines(ctx, file)
     for (const [i, line] of src.entries()) {
       const call = READ_BODY.exec(line)
@@ -135,13 +137,14 @@ export const unvalidatedReadBody = check('Unvalidated readBody', function* (ctx)
         const parsesVariable = new RegExp(`(?:safeParse|\\.parse)\\s*\\(\\s*${variable}\\s*[,)]`)
         if (src.slice(i + 1, i + 1 + BODY_PARSE_LOOKAHEAD).some(l => parsesVariable.test(l))) continue
       }
-      yield { file, line: i + 1, severity: 'error', message: `${call[1]}() not wrapped in .safeParse()/.parse() — validate with the route's Zod schema: ${line.trim()}` }
+      yield { file, line: i + 1, severity: 'error', message: `${call[1]}() not wrapped in .safeParse()/.parse() — use readValidatedBody(event, schema.parse): ${line.trim()}` }
     }
   }
 })
 
 // ─── i18n keys ──────────────────────────────────────────────────────────────
-// Static `t('a.b')` / `$t('a.b')` keys must exist in every locale file.
+// Static `t('a.b')` / `$t('a.b')` keys must exist in every JSON locale file
+// (`i18n/locales/` — the @nuxtjs/i18n v9+ default — or a root `locales/`).
 const T_CALL = /(?<![\w.])\$?t\(\s*['"]([\w-]+(?:\.[\w-]+)+)['"]/g
 
 /** @param {any} obj @param {string} key */
@@ -155,12 +158,12 @@ function hasKey(obj, key) {
 }
 
 export const i18nKeys = check('i18n keys', function* (ctx) {
-  const dir = join(ctx.root, 'i18n', 'locales')
-  if (!existsSync(dir)) return
+  const dir = [join(ctx.root, 'i18n', 'locales'), join(ctx.root, 'locales')].find(existsSync)
+  if (!dir) return
   const locales = readdirSync(dir).filter(f => f.endsWith('.json'))
     .map(f => ({ name: f, messages: JSON.parse(readFileSync(join(dir, f), 'utf8')) }))
   for (const file of ctx.files) {
-    if (!file.startsWith('app/') || isTest(file)) continue
+    if (SERVER_SIDE.test(file) || isTest(file)) continue
     for (const [i, line] of lines(ctx, file).entries()) {
       for (const match of line.matchAll(T_CALL)) {
         const key = /** @type {string} */ (match[1])

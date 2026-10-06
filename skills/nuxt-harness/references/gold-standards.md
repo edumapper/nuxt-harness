@@ -1,26 +1,30 @@
-# Gold Standards — Nuxt / Vue 3 Reference Implementations
+# Gold Standards — reference implementations
 
-These are the canonical patterns for each layer. Imitate them when building new components.
+The canonical shape of each layer, on a small product-catalog feature. Imitate them when
+building new components. Every `vue` block on this page passes the harness (`test/docs.test.ts`
+lints them), so they are safe to copy.
+
+The examples use [Nuxt UI](https://ui.nuxt.com) as the atom layer. With another component
+library, keep the structure and swap the primitives.
 
 ---
 
 ## Page (Assembler)
 
 ```vue
-<!-- pages/formations/index.vue -->
+<!-- app/pages/products/index.vue -->
 <script setup lang="ts">
-definePageMeta({ middleware: 'auth', layout: 'default' })
-useSeoMeta({ title: 'Formations', description: 'Catalogue de formations' })
+definePageMeta({ middleware: 'auth' })
+useSeoMeta({ title: 'Products', description: 'Browse the catalog' })
 
 const route = useRoute()
+const search = computed(() => (typeof route.query.q === 'string' ? route.query.q : undefined))
+const page = computed(() => Number(route.query.page) || 1)
 </script>
 
 <template>
   <!-- Only Orc* and Op* components. Never Presenters. -->
-  <OrcFormationList
-    :search="route.query.q as string"
-    :page="Number(route.query.page) || 1"
-  />
+  <OrcProductList :search="search" :page="page" />
 </template>
 ```
 
@@ -29,113 +33,96 @@ const route = useRoute()
 ## Orchestrator (Smartest)
 
 ```vue
-<!-- components/OrcFormationList.vue -->
+<!-- app/components/OrcProductList.vue -->
 <script setup lang="ts">
+import type { Product } from '#shared/types/product'
+
 const props = defineProps<{ search?: string, page: number }>()
 
-// Reads go through a domain query composable (useApiQuery + the queryKeys registry).
-// The Orchestrator never calls useAsyncData, useFetch or $fetch for reads.
-const { formations, isLoading, error } = useFormationList(() => ({ q: props.search, page: props.page }))
-const localePath = useLocalePath()
+// Reads go through a domain composable; the Orchestrator never calls useFetch/$fetch itself.
+const { products, pending, error } = useProductList(() => ({ q: props.search, page: props.page }))
 
-async function handleSelect(formation: Formation): Promise<void> {
-  await navigateTo(localePath({ name: 'formations-slug', params: { slug: formation.slug } }))
+async function handleSelect(product: Product): Promise<void> {
+  await navigateTo({ name: 'products-slug', params: { slug: product.slug } })
 }
 
-async function handlePageChange(newPage: number): Promise<void> {
-  await navigateTo({ query: { page: newPage } })
+async function handlePageChange(page: number): Promise<void> {
+  await navigateTo({ query: { q: props.search, page } })
 }
 </script>
 
 <template>
-  <OpFormationBrowser
-    :formations="formations"
-    :loading="isLoading"
+  <OpProductBrowser
+    :products="products"
+    :loading="pending"
     :error="error?.message"
+    :page="props.page"
     @select="handleSelect"
     @page-change="handlePageChange"
   />
 </template>
 ```
 
+With `@nuxtjs/i18n`, wrap route locations in `localePath()`: `navigateTo(localePath({ name: 'products-slug', … }))`.
+
 ---
 
 ## Operator (Smart)
 
 ```vue
-<!-- components/OpFormationBrowser.vue -->
+<!-- app/components/OpProductBrowser.vue -->
 <script setup lang="ts">
-interface Props {
-  formations: Formation[]
+import type { Product } from '#shared/types/product'
+
+const props = defineProps<{
+  products: Product[]
   loading: boolean
   error?: string
-}
+  page: number
+}>()
 
-const props = defineProps<Props>()
 const emit = defineEmits<{
-  select: [formation: Formation]
+  'select': [product: Product]
   'page-change': [page: number]
 }>()
 
-// Local state for filtering — Operator's right
-const searchText = ref('')
-const filtered = computed(() =>
-  props.formations.filter(f =>
-    f.title.toLowerCase().includes(searchText.value.toLowerCase())
-  )
+// Local UI state is the Operator's right
+const filter = ref('')
+const visible = computed(() =>
+  props.products.filter(p => p.name.toLowerCase().includes(filter.value.toLowerCase()))
 )
 
-// Can use domain composables (they own the data access)
-const { toggleFavorite } = useFormationFavorites()
-
-function handleSelect(formation: Formation): void {
-  emit('select', formation)
-}
-
-const page = ref(1)
+// Domain composables own their data access — calling one is fine here
+const { toggleFavorite } = useProductFavorites()
 </script>
 
 <template>
-  <!-- UInput replaces a custom SearchBar presenter -->
-  <UInput
-    v-model="searchText"
-    icon="i-tabler-search"
-    placeholder="Rechercher une formation…"
-    class="mb-4"
-  />
+  <UInput v-model="filter" icon="i-lucide-search" placeholder="Filter products…" class="mb-4" />
 
-  <!-- USkeleton while loading — replaces a custom LoadingGrid component -->
   <div v-if="props.loading" class="grid grid-cols-3 gap-4">
-    <USkeleton v-for="n in 6" :key="n" class="h-48 rounded-lg" />
+    <USkeleton v-for="n in 6" :key="n" class="h-48" />
   </div>
 
-  <!-- UAlert for errors — no custom ErrorBanner presenter needed -->
-  <UAlert
-    v-else-if="props.error"
-    color="error"
-    variant="soft"
-    icon="i-tabler-alert-triangle"
-    :description="props.error"
-  />
+  <UAlert v-else-if="props.error" color="error" variant="soft" icon="i-lucide-triangle-alert" :description="props.error" />
 
   <div v-else class="grid grid-cols-3 gap-4">
-    <FormationCard
-      v-for="f in filtered"
-      :key="f.id"
-      v-bind="f"
-      :is-favorite="f.favorite"
-      @click="handleSelect(f)"
-      @toggle-favorite="toggleFavorite.mutateAsync({ id: f.id, favorite: !f.favorite })"
+    <ProductCard
+      v-for="p in visible"
+      :key="p.id"
+      :name="p.name"
+      :price="p.priceLabel"
+      :image-url="p.imageUrl"
+      :favorite="p.favorite"
+      @select="emit('select', p)"
+      @toggle-favorite="toggleFavorite(p)"
     />
   </div>
 
-  <!-- UPagination replaces a custom AppPagination presenter -->
   <UPagination
-    v-model="page"
-    :total="props.formations.length"
-    :page-count="12"
+    :page="props.page"
+    :total="props.products.length"
     class="mt-6"
-    @update:model-value="emit('page-change', $event)"
+    @update:page="emit('page-change', $event)"
   />
 </template>
 ```
@@ -144,61 +131,41 @@ const page = ref(1)
 
 ## Presenter (Dumb)
 
-Presenters use **NuxtUI primitives directly** — never raw HTML elements when a NuxtUI equivalent
-exists, and never a custom wrapper component around NuxtUI.
+Presenters use the atom layer directly: no store, no fetch, no navigation, no formatting.
+The parent hands over ready-to-display values (`price` is already a label).
 
 ```vue
-<!-- components/FormationCard.vue -->
+<!-- app/components/ProductCard.vue -->
 <script setup lang="ts">
-/**
- * Displays a single formation card.
- * Receives ready-to-display data. No logic, no deps, no store.
- * Uses NuxtUI primitives (UCard, UButton, UBadge, UIcon) directly.
- */
-interface Props {
-  id: string
-  title: string
-  description: string
-  thumbnailUrl: string
-  duration: string
-  isFavorite: boolean
-  isLoading?: boolean
-}
-
-defineProps<Props>()
+defineProps<{
+  name: string
+  price: string
+  imageUrl: string
+  favorite: boolean
+}>()
 
 const emit = defineEmits<{
-  click: []
+  'select': []
   'toggle-favorite': []
 }>()
 </script>
 
 <template>
-  <!-- UCard replaces the hand-rolled <article class="rounded-lg border"> pattern -->
-  <UCard
-    class="cursor-pointer"
-    :ui="{ body: 'p-0' }"
-    @click="emit('click')"
-  >
-    <img :src="thumbnailUrl" :alt="title" class="w-full rounded-t-lg" />
+  <UCard class="cursor-pointer" :ui="{ body: 'p-0' }" @click="emit('select')">
+    <img :src="imageUrl" :alt="name" class="w-full">
 
     <div class="p-4">
-      <h3 class="font-semibold text-gray-900">{{ title }}</h3>
-      <p class="text-sm text-gray-600 mt-1">{{ description }}</p>
+      <h3 class="font-semibold text-highlighted">
+        {{ name }}
+      </h3>
 
-      <div class="flex items-center justify-between mt-3">
-        <!-- UBadge replaces <span class="text-xs"> -->
-        <UBadge color="neutral" variant="soft">
-          <UIcon name="i-tabler-clock" class="mr-1" />
-          {{ duration }}
-        </UBadge>
-
-        <!-- UButton replaces <button class="text-amber-500"> -->
+      <div class="mt-3 flex items-center justify-between">
+        <UBadge color="neutral" variant="soft" :label="price" />
         <UButton
-          color="amber"
+          color="primary"
           variant="ghost"
-          :icon="isFavorite ? 'i-tabler-star-filled' : 'i-tabler-star'"
-          :aria-label="isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris'"
+          :icon="favorite ? 'i-lucide-heart-off' : 'i-lucide-heart'"
+          :aria-label="favorite ? 'Remove from favorites' : 'Add to favorites'"
           @click.stop="emit('toggle-favorite')"
         />
       </div>
@@ -209,33 +176,31 @@ const emit = defineEmits<{
 
 ---
 
-## Orchestrator with UForm (Form Submit)
+## Orchestrator with a form
 
 ```vue
-<!-- components/OrcEnrollmentForm.vue -->
+<!-- app/components/OrcNewsletterForm.vue -->
 <script setup lang="ts">
 import { z } from 'zod'
 
-// Schema lives in the Orchestrator — Presenters never own validation logic
+// The schema lives with the smart component; Presenters never own validation
 const schema = z.object({
-  email: z.email('Email invalide'),
-  consent: z.literal(true, 'Vous devez accepter les conditions'),
+  email: z.email('Enter a valid email'),
+  consent: z.literal(true, 'Please accept the terms')
 })
 
-const state = reactive({ email: '', consent: false as boolean })
-
-const props = defineProps<{ formationId: string }>()
-const enroll = useEnrollFormation()
+const state = reactive({ email: '', consent: false })
+const subscribe = useNewsletterSubscribe()
 const toast = useToast()
 const submitting = ref(false)
 
 async function onSubmit(): Promise<void> {
   submitting.value = true // lock before the first await
   try {
-    await enroll.mutateAsync({ formationId: props.formationId, email: state.email })
-    toast.add({ title: 'Inscription confirmée', color: 'success', icon: 'i-tabler-circle-check' })
-  } catch {
-    // the mutation already rolled back and showed its error toast
+    await subscribe(state.email)
+    toast.add({ title: 'Subscribed', color: 'success', icon: 'i-lucide-circle-check' })
+  } catch (error) {
+    toast.add({ title: 'Subscription failed', description: String(error), color: 'error' })
   } finally {
     submitting.value = false
   }
@@ -243,140 +208,118 @@ async function onSubmit(): Promise<void> {
 </script>
 
 <template>
-  <!-- UForm handles schema validation, error display, and submit — no manual fieldsets -->
   <UForm :schema="schema" :state="state" class="space-y-4" @submit="onSubmit">
     <UFormField name="email" label="Email">
-      <UInput v-model="state.email" type="email" placeholder="vous@example.com" />
+      <UInput v-model="state.email" type="email" placeholder="you@example.com" />
     </UFormField>
 
     <UFormField name="consent">
-      <UCheckbox v-model="state.consent" label="J'accepte les conditions d'utilisation" />
+      <UCheckbox v-model="state.consent" label="I accept the terms" />
     </UFormField>
 
-    <UButton type="submit" label="S'inscrire" :loading="submitting" block />
+    <UButton type="submit" label="Subscribe" :loading="submitting" block />
   </UForm>
 </template>
 ```
 
 ---
 
-## Data layer (Pinia Colada)
+## Data layer
 
-Server state lives in the Pinia Colada cache, never in a Pinia store. Four pieces, each with one owner:
+Components never talk to the network directly. A **domain composable** owns each read and
+write, so the Orchestrator stays readable and the call is testable on its own.
 
-### 1. Key registry: the only producer of keys and URLs
+### Reads: a query composable
 
 ```ts
-// utils/queryKeys.ts
-export const queryKeys = {
-  formations: {
-    root: (): EntryKey => ['formations'],
-    list: (params: { q?: string, page: number }): ApiQueryInput => ({
-      key: ['formations', params],
-      url: `/api/formations?${new URLSearchParams({ q: params.q ?? '', page: String(params.page) })}`,
-      keepPrevious: true // paging keeps the previous page on screen
-    }),
-    detail: (slug: MaybeRefOrGetter<string>): ApiQueryInput => ({
-      key: ['formations', toValue(slug)],
-      url: `/api/formations/${toValue(slug)}`
-    })
-  }
+// app/composables/useProductList.ts
+import type { Product } from '#shared/types/product'
+
+export interface UseProductListReturn {
+  products: ComputedRef<Product[]>
+  pending: Ref<boolean>
+  error: Ref<Error | undefined>
 }
-```
 
-Details live under their list root, so invalidating `['formations']` sweeps both. No string-literal key anywhere else.
-
-### 2. Query composable: reads
-
-```ts
-// composables/useFormationList.ts
-export function useFormationList(params: MaybeRefOrGetter<{ q?: string, page: number }>) {
-  const { data, isLoading, error } = useApiQuery<{ formations: Formation[] }>(
-    () => queryKeys.formations.list(toValue(params))
-  )
-  const formations = computed(() => data.value?.formations ?? [])
-  return { formations, isLoading, error }
-}
-```
-
-`useApiQuery` applies the shared cache policy (`staleTime: Infinity`, refetch only stale entries on mount, SSR errors land in `error`). Outside setup (a click, an idle prefetch), read through `fetchThroughCache(queryCache, input)`. Never `$fetch` + `setQueryData`, which creates an entry that is never invalidated.
-
-### 3. Invalidation helper: the domain owns its refresh
-
-```ts
-// composables/useFormationInvalidation.ts
-const FORMATION_TARGETS: InvalidationTarget[] = [{ key: queryKeys.formations.root() }]
-
-export function useFormationInvalidation() {
-  const queryCache = useQueryCache()
-  return () => invalidateSettled(queryCache, FORMATION_TARGETS, 'formations') // logs, never throws
-}
-```
-
-Callers never refetch on their own after a mutation; the helper does.
-
-### 4. Mutation composable: optimistic writes
-
-```ts
-// composables/useFormationFavorites.ts
-export function useFormationFavorites() {
-  const invalidate = useFormationInvalidation()
-  const toggleFavorite = useOptimisticListMutation<{ id: string, favorite: boolean }, { formation: Formation }>({
-    // Mutations use $fetch, never useFetch
-    mutation: vars => $fetch(`/api/formations/${vars.id}/favorite`, { method: 'PUT', body: { favorite: vars.favorite } }),
-    // Every cached page of the list, patched before the server answers; rolled back on error
-    targets: () => [{
-      key: queryKeys.formations.root(),
-      exact: false,
-      apply: (current: { formations: Formation[] } | undefined, vars) => current && {
-        ...current,
-        formations: current.formations.map(f => f.id === vars.id ? { ...f, favorite: vars.favorite } : f)
-      }
-    }],
-    invalidate,
-    errorTitle: 'Impossible de mettre à jour le favori'
+export function useProductList(params: MaybeRefOrGetter<{ q?: string, page: number }>): UseProductListReturn {
+  const { data, pending, error } = useFetch('/api/products', {
+    query: computed(() => toValue(params)),
+    key: computed(() => `products:${JSON.stringify(toValue(params))}`)
   })
+  const products = computed(() => data.value?.products ?? [])
+  return { products, pending, error: computed(() => error.value ?? undefined) }
+}
+```
+
+### Writes: a mutation composable
+
+```ts
+// app/composables/useProductFavorites.ts
+import type { Product } from '#shared/types/product'
+
+export function useProductFavorites() {
+  async function toggleFavorite(product: Product): Promise<void> {
+    // Mutations use $fetch, never useFetch
+    await $fetch(`/api/products/${product.id}/favorite`, { method: 'PUT', body: { favorite: !product.favorite } })
+    await refreshNuxtData('products') // the composable owns the refresh, callers don't
+  }
   return { toggleFavorite }
 }
 ```
 
-The helper keeps the snapshot in the mutation's own context. It rolls back only where the cache still holds its optimistic value, toasts the error, and invalidates once the last overlapping mutation settles. A failed `mutateAsync` rejects after its toast. Callers that only need to stop a spinner catch it and don't add a second message.
+### With a query cache (Pinia Colada, TanStack Query)
 
-Field-level editing of one entity (draft, dirty fields, PATCH, optimistic save) is `useEntityEditor` + `useOptimisticSave`, not this recipe.
+The layering is identical: `useQuery`/`useMutation` live in the domain composable, never in a
+component. Keep query keys in one registry module so invalidation can't miss a spelling, and
+declare your own wrappers in `dataComposables` so Presenters can't call them either:
+
+```js
+// nuxt-harness.config.mjs
+export default { dataComposables: ['useApiQuery', 'useApiMutation'] }
+```
+
+### Server routes: validate the body
+
+```ts
+// server/api/products/[id]/favorite.put.ts
+import { z } from 'zod'
+
+const bodySchema = z.object({ favorite: z.boolean() })
+
+export default defineEventHandler(async (event) => {
+  const { favorite } = await readValidatedBody(event, bodySchema.parse)
+  const id = getRouterParam(event, 'id')
+  return setFavorite(id, favorite)
+})
+```
 
 ---
 
-## Key Patterns Summary
+## Key patterns
 
 | Pattern | Rule |
 |---------|------|
-| `defineProps<T>()` | Always use type-based, never runtime syntax |
-| `defineEmits<{...}>()` | Type-based with call signatures |
-| `const emit = defineEmits<{}>()` | Explicitly declare emits |
-| Server reads | `useApiQuery(queryKeys.x…)` inside a domain composable, called from an Orchestrator |
-| Server writes | `useOptimisticListMutation` / `useEntityEditor` inside a domain composable; `$fetch`, never `useFetch` |
-| Query keys and URLs | Only from the `queryKeys` registry |
-| Server state in Pinia stores | Never — the Colada cache is the store |
-| `useRouter()` | Only in Orchestrators and Operators |
-| Export composables as named functions | `export function useFoo(): UseFooReturn` |
-| Composable return type | Always explicit: `UseFooReturn` interface |
-| `console.log` | Forbidden — use the evlog logger |
-| `@ts-ignore` | Forbidden — fix the underlying type issue |
-| Deep relative imports (`../../../`) | Forbidden — use `~/` or `@/` |
+| `defineProps<T>()` / `defineEmits<{…}>()` | Always type-based, never runtime syntax |
+| Server reads | Domain composable (`useFetch`/`useAsyncData`/`useQuery`), called from an Orchestrator |
+| Server writes | `$fetch` inside a domain composable, which owns the refresh |
+| Request bodies | `readValidatedBody(event, schema.parse)` |
+| `useRouter()` / `navigateTo()` | Orchestrators, Operators, Pages and middleware only |
+| Composable return type | Explicit (`UseFooReturn`) for anything shared |
+| `console.log` | Forbidden — remove it or use the app's logger |
+| `@ts-ignore`, `@ts-expect-error` | Forbidden — fix the type |
+| Deep relative imports (`../../`) | Forbidden — use `~/`, `~~/`, `#shared` |
 
-### NuxtUI Primitive Rules
+### Atom-layer rules (Nuxt UI)
 
 | Anti-pattern | Correct approach |
 |---|---|
-| `<button class="bg-primary-500 …">` | `<UButton color="primary">` |
+| `<button class="…">` styled by hand | `<UButton color="primary">` |
 | `<input class="border rounded …">` | `<UInput>` |
 | `<select>` / `<option>` | `<USelect :items>` |
 | `<table><thead><tr>…` | `<UTable :data :columns>` |
-| `<div class="rounded-lg border p-4">` card | `<UCard>` |
-| `<span class="text-xs text-zinc-400">` label | `<UBadge color="neutral" variant="soft">` |
-| `<div class="animate-pulse bg-gray-200">` skeleton | `<USkeleton>` |
-| `<div v-if="error" class="text-red-500">` | `<UAlert color="error">` |
-| Custom `AppButton.vue` wrapping `UButton` | Use `<UButton>` directly |
-| Custom `AppModal.vue` wrapping `UModal` | Use `<UModal>` directly in Operator |
+| Hand-rolled bordered card | `<UCard>` |
+| `animate-pulse` placeholder | `<USkeleton>` |
+| Error `<div>` | `<UAlert color="error">` |
+| `AppButton.vue` wrapping `UButton` | Use `<UButton>` directly |
 | Manual form error `<p>` tags | `<UForm :schema>` + `<UFormField>` |
-| `useToast()` in a Presenter | Call `useToast()` in Orchestrator or composable only |
+| `useToast()` in a Presenter | Orchestrator or composable only |

@@ -5,7 +5,7 @@
  *   fast  — static checks + harness ESLint rules on changed files. No install of the
  *           app, no `.nuxt/`, ~1–2 s. What agents run after every edit.
  *   full  — fast checks on every file + the app's own toolchain (nuxt typecheck,
- *           type-aware ESLint, knip, cspell, jscpd, vitest + CRAP). Needs `bun install`.
+ *           type-aware ESLint, knip, cspell, jscpd, vitest + CRAP). Needs the app installed.
  *   hook  — Claude Code PostToolUse adapter: reads the hook JSON on stdin, runs `fast`
  *           on the edited file, exits 2 with findings on stderr so the agent sees them.
  *   stop  — Claude Code Stop adapter: runs `fast` on every file changed on the branch
@@ -16,6 +16,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from
 import { dirname, isAbsolute, join, relative } from 'node:path'
 
 import { STATIC_CHECKS } from './checks.js'
+import { loadConfig, resolveOptions, sourcePattern } from './config.js'
 import { applyBaseline, baselineFrom, crapFindings } from './crap.js'
 import { lint } from './lint.js'
 
@@ -24,7 +25,6 @@ import { lint } from './lint.js'
 
 const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
 const BASELINE_FILE = 'nuxt-harness-baseline.json'
-const SCOPE = /^(app|server|shared|modules)\/.+\.(vue|ts|js|mjs)$/
 const MAX_PRINTED = 15
 // A Stop hook that always blocks would loop forever on an error the agent cannot fix.
 const MAX_STOP_BLOCKS = 3
@@ -36,31 +36,32 @@ const red = paint('31'), green = paint('32'), yellow = paint('33'), dim = paint(
 // ─── File selection ─────────────────────────────────────────────────────────
 /** @param {string} cwd @param {string[]} args */
 function git(cwd, args) {
-  const r = spawnSync('git', args, { cwd, encoding: 'utf8' })
+  // Large untracked trees (an unignored node_modules) overflow the default 1 MB buffer.
+  const r = spawnSync('git', args, { cwd, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 })
   return r.status === 0 ? r.stdout.trim() : undefined
 }
 
-/** @param {string[]} files */
-const inScope = files => [...new Set(files)].filter(f => SCOPE.test(f) && !f.endsWith('.d.ts'))
+/** @param {string[]} files @param {RegExp} scope */
+const inScope = (files, scope) => [...new Set(files)].filter(f => scope.test(f) && !f.endsWith('.d.ts'))
 
-/** @param {string} root */
-function allFiles(root) {
-  return inScope((git(root, ['ls-files', '-co', '--exclude-standard']) ?? '').split('\n'))
+/** @param {string} root @param {RegExp} scope */
+function allFiles(root, scope) {
+  return inScope((git(root, ['ls-files', '-co', '--exclude-standard']) ?? '').split('\n'), scope)
 }
 
 /**
  * Working-tree changes + untracked files + commits since the merge-base with
  * the remote default branch (override with NUXT_HARNESS_BASE).
- * @param {string} root
+ * @param {string} root @param {RegExp} scope
  */
-function changedFiles(root) {
+function changedFiles(root, scope) {
   const upstream = process.env.NUXT_HARNESS_BASE ?? git(root, ['rev-parse', '--abbrev-ref', 'origin/HEAD'])
   const base = upstream ? git(root, ['merge-base', 'HEAD', upstream]) : undefined
   const lists = [
     git(root, ['diff', '--name-only', '--diff-filter=ACMR', base ?? 'HEAD']),
     git(root, ['ls-files', '--others', '--exclude-standard'])
   ]
-  return inScope(lists.join('\n').split('\n')).filter(f => existsSync(join(root, f)))
+  return inScope(lists.join('\n').split('\n'), scope).filter(f => existsSync(join(root, f)))
 }
 
 // ─── Check runners ──────────────────────────────────────────────────────────
@@ -80,51 +81,66 @@ async function timed(name, fn) {
   }
 }
 
-/** @param {string} root @param {string[]} files */
-function fastChecks(root, files) {
+/** @param {string} root @param {string[]} files @param {import('./config.js').HarnessOptions} options */
+function fastChecks(root, files, options) {
   const ctx = { root, files }
   return Promise.all([
     ...STATIC_CHECKS.map(c => timed(c.name, () => c.run(ctx))),
-    timed('ESLint (harness rules)', () => lint(root, files))
+    timed('ESLint (harness rules)', () => lint(root, files, options))
   ])
 }
 
+/** The app's package manager, from its lockfile. @param {string} root */
+function packageManager(root) {
+  if (['bun.lock', 'bun.lockb'].some(f => existsSync(join(root, f)))) return 'bun'
+  if (existsSync(join(root, 'pnpm-lock.yaml'))) return 'pnpm'
+  if (existsSync(join(root, 'yarn.lock'))) return 'yarn'
+  return 'npm'
+}
+
 /**
+ * @typedef {{ name: string, script?: string, bin: string, args: string[], when?: string[] }} ToolStep
+ *
  * The app's own toolchain. Each step runs its package.json script when the app
- * defines one (the app knows its globs), otherwise the bare binary.
- * @type {{ name: string, script?: string, bin: string, args: string[], when?: string }[]}
+ * defines one (the app knows its globs), otherwise the bare binary. A step with
+ * `when` runs only if one of those files exists.
+ * @param {'app' | '.'} srcDir
+ * @returns {ToolStep[]}
  */
-const TOOL_STEPS = [
-  { name: 'TypeScript (nuxt typecheck)', bin: 'nuxt', args: ['typecheck'] },
-  { name: 'ESLint (project, type-aware)', bin: 'eslint', args: ['.', '--max-warnings', '0'] },
-  { name: 'Dead code (knip)', bin: 'knip', args: ['--reporter', 'compact'], when: 'knip.json' },
-  { name: 'Spelling (cspell)', script: 'check:spell', bin: 'cspell', args: ['app/**/*.{ts,vue}', 'server/**/*.ts', 'shared/**/*.ts', '--no-progress'], when: 'cspell.json' },
-  { name: 'Duplicates (jscpd)', bin: 'jscpd', args: ['--config', '.jscpd.json'], when: '.jscpd.json' },
-  {
-    name: 'Tests (vitest + coverage)',
-    bin: 'vitest',
-    args: ['run', '--coverage.enabled', '--coverage.reporter=json', '--coverage.reportsDirectory=.harness/coverage'],
-    when: 'vitest.config.ts'
-  }
-]
+function toolSteps(srcDir) {
+  const appGlob = srcDir === 'app' ? 'app/**/*.{ts,vue}' : '{components,composables,layouts,middleware,pages,plugins,utils}/**/*.{ts,vue}'
+  return [
+    { name: 'TypeScript (nuxt typecheck)', bin: 'nuxt', args: ['typecheck'] },
+    { name: 'ESLint (project, type-aware)', bin: 'eslint', args: ['.', '--max-warnings', '0'] },
+    { name: 'Dead code (knip)', bin: 'knip', args: ['--reporter', 'compact'], when: ['knip.json', 'knip.jsonc', 'knip.config.ts'] },
+    { name: 'Spelling (cspell)', script: 'check:spell', bin: 'cspell', args: [appGlob, 'server/**/*.ts', 'shared/**/*.ts', '--no-progress'], when: ['cspell.json', 'cspell.config.yaml', '.cspell.json'] },
+    { name: 'Duplicates (jscpd)', bin: 'jscpd', args: ['--config', '.jscpd.json'], when: ['.jscpd.json'] },
+    {
+      name: 'Tests (vitest + coverage)',
+      bin: 'vitest',
+      args: ['run', '--coverage.enabled', '--coverage.reporter=json', '--coverage.reportsDirectory=.harness/coverage'],
+      when: ['ts', 'mts', 'js', 'mjs'].map(ext => `vitest.config.${ext}`)
+    }
+  ]
+}
 
 const SIGNAL = /error|warning|✗|×|FAIL|Unknown word|clone|Unused|Unlisted|^\//i
 
-/** @param {string} root @param {typeof TOOL_STEPS[number]} step @returns {Promise<CheckReport>} */
+/** @param {string} root @param {ToolStep} step @returns {Promise<CheckReport>} */
 function runTool(root, step) {
   const start = performance.now()
   /** @param {CheckReport['status']} status @param {Finding[]} findings @param {string} [note] @returns {CheckReport} */
   const done = (status, findings, note) =>
     ({ name: step.name, status, durationMs: Math.round(performance.now() - start), findings, ...(note ? { note } : {}) })
 
-  if (step.when && !existsSync(join(root, step.when))) return Promise.resolve(done('skip', [], `no ${step.when}`))
+  if (step.when && !step.when.some(f => existsSync(join(root, f)))) return Promise.resolve(done('skip', [], `no ${step.when[0]}`))
   const scripts = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).scripts ?? {}
   const binPath = join(root, 'node_modules', '.bin', step.bin)
   const useScript = step.script && scripts[step.script]
   if (!useScript && !existsSync(binPath)) {
-    return Promise.resolve(done('fail', [{ check: step.name, file: 'package.json', line: 0, severity: 'error', message: `${step.bin} not installed — the full gate needs the app's dependencies (bun install)` }]))
+    return Promise.resolve(done('fail', [{ check: step.name, file: 'package.json', line: 0, severity: 'error', message: `${step.bin} not installed — the full gate needs the app's dependencies installed` }]))
   }
-  const [cmd, args] = useScript ? ['bun', ['run', /** @type {string} */ (step.script)]] : [binPath, step.args]
+  const [cmd, args] = useScript ? [packageManager(root), ['run', /** @type {string} */ (step.script)]] : [binPath, step.args]
 
   return new Promise((resolve) => {
     const child = spawn(cmd, args, { cwd: root, env: { ...process.env, FORCE_COLOR: '0', NO_COLOR: '1' } })
@@ -178,19 +194,24 @@ const toRelative = (root, p) => isAbsolute(p) ? relative(root, p) : relative(roo
 
 /**
  * @param {'fast' | 'full'} mode
- * @param {{ root: string, files?: string[], all?: boolean, updateBaseline?: boolean }} options
+ * @param {{ root: string, files?: string[], all?: boolean, updateBaseline?: boolean, config?: import('./config.js').HarnessOptions }} options
  */
-export async function runGate(mode, { root, files, all, updateBaseline }) {
+export async function runGate(mode, { root, files, all, updateBaseline, config }) {
   const start = performance.now()
-  const selected = mode === 'full' || all ? allFiles(root) : files?.length ? inScope(files.map(f => toRelative(root, f))) : changedFiles(root)
+  const options = { ...(config ?? await loadConfig(root)), root }
+  const { srcDir } = resolveOptions(options)
+  const scope = sourcePattern(srcDir)
+  const selected = mode === 'full' || all
+    ? allFiles(root, scope)
+    : files?.length ? inScope(files.map(f => toRelative(root, f)), scope) : changedFiles(root, scope)
 
   /** @type {CheckReport[]} */
-  let checks = await fastChecks(root, selected)
+  let checks = await fastChecks(root, selected, options)
   if (mode === 'full') {
-    const tools = await Promise.all(TOOL_STEPS.map(step => runTool(root, step)))
+    const tools = await Promise.all(toolSteps(srcDir).map(step => runTool(root, step)))
     // CRAP joins complexity with the coverage the vitest step just wrote.
     const crapCheck = await timed('CRAP (complexity × coverage)', async () => {
-      const findings = await crapFindings(root, selected)
+      const findings = await crapFindings(root, selected, options)
       if (updateBaseline) writeFileSync(join(root, BASELINE_FILE), `${JSON.stringify({ crap: baselineFrom(findings) }, null, 2)}\n`)
       const baselinePath = join(root, BASELINE_FILE)
       const baseline = existsSync(baselinePath) ? JSON.parse(readFileSync(baselinePath, 'utf8')).crap ?? {} : {}
@@ -275,9 +296,10 @@ async function hook() {
   const real = realpathSync(abs)
   const root = projectRoot(dirname(real))
   const rel = relative(root, real)
-  if (inScope([rel]).length === 0) return 0
 
-  const errors = errorsOf(await runGate('fast', { root, files: [rel] }))
+  const report = await runGate('fast', { root, files: [rel] })
+  if (report.files === 0) return 0 // outside the harness scope
+  const errors = errorsOf(report)
   if (errors.length === 0) return 0
   process.stderr.write(`nuxt-harness: ${errors.length} error(s) in ${rel} — fix before moving on:\n`)
   writeErrors(errors, false)

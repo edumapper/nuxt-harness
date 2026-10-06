@@ -17,7 +17,7 @@
  *
  * WHY navigateTo() MUST BE AWAITED OR RETURNED:
  *   navigateTo() returns a Promise<void | NavigationFailure | false>. On the
- *   server side (Cloudflare Workers / SSR), the redirect is only sent to the
+ *   server side (SSR), the redirect is only sent to the
  *   client when the Promise resolves. If you drop the Promise, the server
  *   continues executing the current handler, possibly sending a response before
  *   the redirect can fire — or silently skipping the redirect entirely.

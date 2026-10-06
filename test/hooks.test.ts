@@ -65,3 +65,27 @@ describe('hook — feedback right after an edit', () => {
     expect(run('hook', { tool_input: { file_path: join(cwd, 'scripts/x.ts') } }, cwd).status).toBe(0)
   })
 })
+
+describe('fast — works on any Nuxt 4 app out of the box', () => {
+  // Default Tailwind palettes, string navigation without i18n, console.warn: none of these are
+  // the harness's business until the app opts in.
+  const PLAIN_APP = {
+    'package.json': '{"name":"plain"}',
+    'app/pages/index.vue': '<script setup lang="ts">\nasync function go(): Promise<void> {\n  await navigateTo(\'/about\')\n}\n</script>\n\n<template>\n  <div class="text-gray-700 bg-slate-50">\n    <OrcHome @go="go" />\n  </div>\n</template>\n',
+    'app/components/OrcHome.vue': '<script setup lang="ts">\nconst emit = defineEmits<{ go: [] }>()\nconst { data } = await useFetch(\'/api/hello\')\n</script>\n\n<template>\n  <button class="text-sky-600" @click="emit(\'go\')">{{ data }}</button>\n</template>\n'
+  }
+
+  it('passes a plain app with default Tailwind colors and no i18n', () => {
+    const cwd = repo(PLAIN_APP)
+    const r = spawnSync(process.execPath, [BIN, 'fast', '--all'], { cwd, encoding: 'utf8' })
+    expect(r.stdout).toContain('passed')
+    expect(r.status).toBe(0)
+  })
+
+  it('applies the design system declared in nuxt-harness.config.mjs', () => {
+    const cwd = repo({ ...PLAIN_APP, 'nuxt-harness.config.mjs': 'export default { designSystem: { palettes: [\'zinc\'] } }\n' })
+    const r = spawnSync(process.execPath, [BIN, 'fast', '--all'], { cwd, encoding: 'utf8' })
+    expect(r.status).toBe(1)
+    expect(r.stdout).toContain('no-off-palette-color-class')
+  })
+})

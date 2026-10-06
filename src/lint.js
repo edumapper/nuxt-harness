@@ -30,11 +30,10 @@ function loadSuppressions(root) {
 /**
  * @param {string} root
  * @param {string[]} files relative to root
- * @param {import('eslint').Linter.RulesRecord} [extraRules]
+ * @param {{ options?: import('./config.js').HarnessOptions, extraRules?: import('eslint').Linter.RulesRecord }} [opts]
  */
-export async function lintFiles(root, files, extraRules) {
-  /** @type {import('eslint').Linter.Config[]} */
-  const config = /** @type {any} */ (await standalone())
+export async function lintFiles(root, files, { options, extraRules } = {}) {
+  const config = await standalone({ ...options, root })
   if (extraRules) config.push({ files: ['**/*.{ts,js,vue}'], rules: extraRules })
   const eslint = new ESLint({ cwd: root, overrideConfigFile: true, overrideConfig: config, errorOnUnmatchedPattern: false })
   return eslint.lintFiles(files)
@@ -43,11 +42,12 @@ export async function lintFiles(root, files, extraRules) {
 /**
  * @param {string} root
  * @param {string[]} files relative to root
+ * @param {import('./config.js').HarnessOptions} [options]
  * @returns {Promise<Finding[]>}
  */
-export async function lint(root, files) {
+export async function lint(root, files, options) {
   if (files.length === 0) return []
-  const results = await lintFiles(root, files)
+  const results = await lintFiles(root, files, { options })
   const suppressions = loadSuppressions(root)
   /** @type {Finding[]} */
   const findings = []
