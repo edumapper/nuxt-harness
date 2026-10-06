@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.2]
+
+### Fixed
+
+- The lint toolchain (`eslint`, `eslint-plugin-vue`, `vue-eslint-parser`, `@typescript-eslint/*`)
+  is declared as `peerDependencies` with ranges instead of pinned `dependencies`. Installing the
+  harness no longer adds older copies of these packages to a project, which could replace the
+  project's own versions. `typescript` is no longer a dependency (`@typescript-eslint` already
+  requires it as a peer).
+- CI runs the test suite on the lowest supported peer versions, and checks that installing the
+  harness leaves a project's lint packages untouched.
+
 ## [0.5.1]
 
 ### Added
