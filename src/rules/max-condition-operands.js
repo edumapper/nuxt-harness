@@ -34,7 +34,7 @@ export default {
         '❌ {{where}} combines {{count}} conditions — max {{max}}',
         '💡 A compound guard hides a rule behind its mechanics; every reader re-derives what it means.',
         '🛠 Extract it to a named computed or function (e.g. `const canSubmit = computed(() => …)`), ideally returning the blocking reason.',
-        '📖 packages/nuxt-harness/skill/references/eslint-rules.md#max-condition-operands'
+        '📖 https://github.com/edumapper/nuxt-harness/blob/main/skills/nuxt-harness/references/eslint-rules.md#max-condition-operands'
       ].join('\n')
     }
   },

@@ -24,7 +24,7 @@ export default {
         '❌ <ClientOnly> without a preceding comment explaining why SSR is not used',
         '💡 ClientOnly drops server rendering for the whole subtree (no HTML, layout shift, later data). It is often used to mask a hydration bug.',
         '🛠 Fix the SSR issue (useCookie, onMounted, useState…) — or, if the subtree truly needs the browser, add `<!-- ClientOnly: <why> -->` right above it.',
-        '📖 packages/nuxt-harness/skill/references/eslint-rules.md#client-only-needs-reason'
+        '📖 https://github.com/edumapper/nuxt-harness/blob/main/skills/nuxt-harness/references/eslint-rules.md#client-only-needs-reason'
       ].join('\n')
     }
   },

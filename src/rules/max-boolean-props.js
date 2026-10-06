@@ -52,7 +52,7 @@ export default {
         '❌ defineProps declares {{count}} boolean props ({{names}}) — max {{max}}',
         '💡 {{count}} flags encode 2^{{count}} states; most combinations are illegal and every template branch must guard them.',
         '🛠 Replace the flags with one discriminated union prop, e.g. `status: \'idle\' | \'loading\' | \'error\'`.',
-        '📖 packages/nuxt-harness/skill/references/eslint-rules.md#max-boolean-props'
+        '📖 https://github.com/edumapper/nuxt-harness/blob/main/skills/nuxt-harness/references/eslint-rules.md#max-boolean-props'
       ].join('\n')
     }
   },

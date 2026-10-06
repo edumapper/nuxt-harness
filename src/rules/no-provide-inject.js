@@ -22,7 +22,7 @@ export default {
         '❌ {{name}}() — provide/inject is banned',
         '💡 Invisible, untyped dependency: the consumer cannot see its provider, and a missing provider only fails at runtime.',
         '🛠 Pass it down as props (Orc → Op → Presenter), or share state through a composable (useState / module-level ref) that both sides import.',
-        '📖 packages/nuxt-harness/skill/references/eslint-rules.md#no-provide-inject'
+        '📖 https://github.com/edumapper/nuxt-harness/blob/main/skills/nuxt-harness/references/eslint-rules.md#no-provide-inject'
       ].join('\n')
     }
   },

@@ -37,7 +37,7 @@ function isAllowedInPage(name) {
   if (NATIVE_ELEMENTS.has(name)) return true
   if (VUE_NUXT_BUILTINS.has(name) || VUE_NUXT_BUILTINS.has(pascal)) return true
   if (/^Nuxt[A-Z]/.test(pascal)) return true // NuxtLinkLocale, NuxtTime, NuxtImg…
-  // NuxtUI is the atom layer — treated like native HTML elements (see skill/SKILL.md)
+  // NuxtUI is the atom layer — treated like native HTML elements (see skills/nuxt-harness/SKILL.md)
   if (/^U[A-Z]/.test(pascal)) return true
   if (pascal.startsWith('Orc')) return true // Orchestrators — allowed
   if (pascal.startsWith('Op')) return true // Operators — allowed

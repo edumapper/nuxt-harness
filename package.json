@@ -1,6 +1,6 @@
 {
   "name": "@edumapper/nuxt-harness",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Deterministic architecture gate for Nuxt 4 apps: 5-layer ESLint rules, static checks, CRAP, and a fast agent mode that needs neither the app's node_modules nor .nuxt/.",
   "license": "UNLICENSED",
   "type": "module",
@@ -14,7 +14,7 @@
   "files": [
     "bin",
     "src",
-    "skill",
+    "skills",
     "README.md"
   ],
   "engines": {
@@ -22,11 +22,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/edumapper/nuxt-harness.git",
-    "directory": "packages/nuxt-harness"
+    "url": "git+https://github.com/edumapper/nuxt-harness.git"
   },
-  "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
+  "scripts": {
+    "test": "vitest run"
   },
   "dependencies": {
     "@typescript-eslint/eslint-plugin": "8.57.0",
@@ -35,5 +34,8 @@
     "eslint-plugin-vue": "10.8.0",
     "typescript": "5.9.3",
     "vue-eslint-parser": "10.4.0"
+  },
+  "devDependencies": {
+    "vitest": "4.1.11"
   }
 }

@@ -1,6 +1,6 @@
 # ESLint rules — `@edumapper/nuxt-harness/eslint`
 
-Source of truth: `packages/nuxt-harness/src/eslint.js`. This page explains why each rule exists.
+Source of truth: `src/eslint.js` in [edumapper/nuxt-harness](https://github.com/edumapper/nuxt-harness). This page explains why each rule exists.
 All rules are `error` unless noted. Messages follow ❌ what → 💡 why → 🛠 fix → 📖 doc.
 
 ## Entry points

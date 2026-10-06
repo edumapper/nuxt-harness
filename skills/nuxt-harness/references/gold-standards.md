@@ -31,28 +31,14 @@ const route = useRoute()
 ```vue
 <!-- components/OrcFormationList.vue -->
 <script setup lang="ts">
-interface Props {
-  search?: string
-  page: number
-}
+const props = defineProps<{ search?: string, page: number }>()
 
-const props = defineProps<Props>()
-
-// Data fetching — Orchestrator's exclusive right
-const { data: formations, status, error } = await useAsyncData(
-  'formations',
-  () => $fetch<Formation[]>('/api/formations', {
-    query: { q: props.search, page: props.page },
-  }),
-  { watch: [() => props.search, () => props.page] }
-)
-
-// Store access — Orchestrator's right
-const recentStore = useRecentStore()
+// Reads go through a domain query composable (useApiQuery + the queryKeys registry).
+// The Orchestrator never calls useAsyncData, useFetch or $fetch for reads.
+const { formations, isLoading, error } = useFormationList(() => ({ q: props.search, page: props.page }))
 const localePath = useLocalePath()
 
 async function handleSelect(formation: Formation): Promise<void> {
-  recentStore.addFormation(formation.id)
   await navigateTo(localePath({ name: 'formations-slug', params: { slug: formation.slug } }))
 }
 
@@ -63,8 +49,8 @@ async function handlePageChange(newPage: number): Promise<void> {
 
 <template>
   <OpFormationBrowser
-    :formations="formations ?? []"
-    :loading="status === 'pending'"
+    :formations="formations"
+    :loading="isLoading"
     :error="error?.message"
     @select="handleSelect"
     @page-change="handlePageChange"
@@ -99,8 +85,8 @@ const filtered = computed(() =>
   )
 )
 
-// Can use business composables
-const { favorites, toggleFavorite } = useFormationFavorites()
+// Can use domain composables (they own the data access)
+const { toggleFavorite } = useFormationFavorites()
 
 function handleSelect(formation: Formation): void {
   emit('select', formation)
@@ -137,9 +123,9 @@ const page = ref(1)
       v-for="f in filtered"
       :key="f.id"
       v-bind="f"
-      :is-favorite="favorites.includes(f.id)"
+      :is-favorite="f.favorite"
       @click="handleSelect(f)"
-      @toggle-favorite="toggleFavorite(f.id)"
+      @toggle-favorite="toggleFavorite.mutateAsync({ id: f.id, favorite: !f.favorite })"
     />
   </div>
 
@@ -238,15 +224,20 @@ const schema = z.object({
 
 const state = reactive({ email: '', consent: false as boolean })
 
-const { enroll, isLoading } = useFormationEnrollment()
+const props = defineProps<{ formationId: string }>()
+const enroll = useEnrollFormation()
 const toast = useToast()
+const submitting = ref(false)
 
 async function onSubmit(): Promise<void> {
-  const result = await enroll(state.email)
-  if (result.ok) {
+  submitting.value = true // lock before the first await
+  try {
+    await enroll.mutateAsync({ formationId: props.formationId, email: state.email })
     toast.add({ title: 'Inscription confirmée', color: 'success', icon: 'i-tabler-circle-check' })
-  } else {
-    toast.add({ title: 'Erreur', description: result.error, color: 'error' })
+  } catch {
+    // the mutation already rolled back and showed its error toast
+  } finally {
+    submitting.value = false
   }
 }
 </script>
@@ -262,142 +253,96 @@ async function onSubmit(): Promise<void> {
       <UCheckbox v-model="state.consent" label="J'accepte les conditions d'utilisation" />
     </UFormField>
 
-    <UButton type="submit" label="S'inscrire" :loading="isLoading" block />
+    <UButton type="submit" label="S'inscrire" :loading="submitting" block />
   </UForm>
 </template>
 ```
 
 ---
 
-## Composable (Pure Logic)
+## Data layer (Pinia Colada)
+
+Server state lives in the Pinia Colada cache, never in a Pinia store. Four pieces, each with one owner:
+
+### 1. Key registry: the only producer of keys and URLs
+
+```ts
+// utils/queryKeys.ts
+export const queryKeys = {
+  formations: {
+    root: (): EntryKey => ['formations'],
+    list: (params: { q?: string, page: number }): ApiQueryInput => ({
+      key: ['formations', params],
+      url: `/api/formations?${new URLSearchParams({ q: params.q ?? '', page: String(params.page) })}`,
+      keepPrevious: true // paging keeps the previous page on screen
+    }),
+    detail: (slug: MaybeRefOrGetter<string>): ApiQueryInput => ({
+      key: ['formations', toValue(slug)],
+      url: `/api/formations/${toValue(slug)}`
+    })
+  }
+}
+```
+
+Details live under their list root, so invalidating `['formations']` sweeps both. No string-literal key anywhere else.
+
+### 2. Query composable: reads
+
+```ts
+// composables/useFormationList.ts
+export function useFormationList(params: MaybeRefOrGetter<{ q?: string, page: number }>) {
+  const { data, isLoading, error } = useApiQuery<{ formations: Formation[] }>(
+    () => queryKeys.formations.list(toValue(params))
+  )
+  const formations = computed(() => data.value?.formations ?? [])
+  return { formations, isLoading, error }
+}
+```
+
+`useApiQuery` applies the shared cache policy (`staleTime: Infinity`, refetch only stale entries on mount, SSR errors land in `error`). Outside setup (a click, an idle prefetch), read through `fetchThroughCache(queryCache, input)`. Never `$fetch` + `setQueryData`, which creates an entry that is never invalidated.
+
+### 3. Invalidation helper: the domain owns its refresh
+
+```ts
+// composables/useFormationInvalidation.ts
+const FORMATION_TARGETS: InvalidationTarget[] = [{ key: queryKeys.formations.root() }]
+
+export function useFormationInvalidation() {
+  const queryCache = useQueryCache()
+  return () => invalidateSettled(queryCache, FORMATION_TARGETS, 'formations') // logs, never throws
+}
+```
+
+Callers never refetch on their own after a mutation; the helper does.
+
+### 4. Mutation composable: optimistic writes
 
 ```ts
 // composables/useFormationFavorites.ts
-
-interface UseFormationFavoritesReturn {
-  favorites: Readonly<Ref<string[]>>
-  toggleFavorite: (id: string) => void
-  isFavorite: (id: string) => boolean
-}
-
-/**
- * Manages formation favorites using Pinia store.
- * Encapsulates store access so Operators get a clean interface.
- */
-export function useFormationFavorites(): UseFormationFavoritesReturn {
-  const store = useFormationStore()
-
-  const favorites = computed(() => store.favoriteIds)
-
-  function toggleFavorite(id: string): void {
-    if (store.favoriteIds.includes(id)) {
-      store.removeFavorite(id)
-    } else {
-      store.addFavorite(id)
-    }
-  }
-
-  function isFavorite(id: string): boolean {
-    return store.favoriteIds.includes(id)
-  }
-
-  return { favorites, toggleFavorite, isFavorite }
+export function useFormationFavorites() {
+  const invalidate = useFormationInvalidation()
+  const toggleFavorite = useOptimisticListMutation<{ id: string, favorite: boolean }, { formation: Formation }>({
+    // Mutations use $fetch, never useFetch
+    mutation: vars => $fetch(`/api/formations/${vars.id}/favorite`, { method: 'PUT', body: { favorite: vars.favorite } }),
+    // Every cached page of the list, patched before the server answers; rolled back on error
+    targets: () => [{
+      key: queryKeys.formations.root(),
+      exact: false,
+      apply: (current: { formations: Formation[] } | undefined, vars) => current && {
+        ...current,
+        formations: current.formations.map(f => f.id === vars.id ? { ...f, favorite: vars.favorite } : f)
+      }
+    }],
+    invalidate,
+    errorTitle: 'Impossible de mettre à jour le favori'
+  })
+  return { toggleFavorite }
 }
 ```
 
----
+The helper keeps the snapshot in the mutation's own context. It rolls back only where the cache still holds its optimistic value, toasts the error, and invalidates once the last overlapping mutation settles. A failed `mutateAsync` rejects after its toast. Callers that only need to stop a spinner catch it and don't add a second message.
 
-## Composable with Error Handling (Result Pattern)
-
-For service calls that can fail, use an explicit Result type — never throw in composables.
-
-```ts
-// types/result.ts
-export type Result<T, E = string> =
-  | { ok: true; data: T }
-  | { ok: false; error: E }
-
-export function ok<T>(data: T): Result<T> { return { ok: true, data } }
-export function err<E = string>(error: E): Result<never, E> { return { ok: false, error } }
-```
-
-```ts
-// composables/useFormationEnrollment.ts
-import { ok, err, type Result } from '~/types/result'
-
-interface UseFormationEnrollmentReturn {
-  isEnrolled: (formationId: string) => boolean
-  enroll: (formationId: string) => Promise<Result<void>>
-  isLoading: Ref<boolean>
-}
-
-export function useFormationEnrollment(): UseFormationEnrollmentReturn {
-  const store = useEnrollmentStore()
-  const isLoading = ref(false)
-
-  function isEnrolled(formationId: string): boolean {
-    return store.enrolledIds.includes(formationId)
-  }
-
-  async function enroll(formationId: string): Promise<Result<void>> {
-    isLoading.value = true
-    try {
-      await $fetch('/api/enroll', { method: 'POST', body: { formationId } })
-      store.addEnrollment(formationId)
-      return ok(undefined)
-    } catch (e) {
-      const message = e instanceof Error ? e.message : 'Enrollment failed'
-      return err(message)
-    } finally {
-      isLoading.value = false
-    }
-  }
-
-  return { isEnrolled, enroll, isLoading }
-}
-```
-
----
-
-## Pinia Store
-
-```ts
-// stores/formation.ts
-export const useFormationStore = defineStore('formation', () => {
-  // State
-  const favoriteIds = ref<string[]>([])
-  const enrolledIds = ref<string[]>([])
-
-  // Getters
-  const favoriteCount = computed(() => favoriteIds.value.length)
-
-  // Actions
-  function addFavorite(id: string): void {
-    if (!favoriteIds.value.includes(id)) {
-      favoriteIds.value.push(id)
-    }
-  }
-
-  function removeFavorite(id: string): void {
-    favoriteIds.value = favoriteIds.value.filter(f => f !== id)
-  }
-
-  function addEnrollment(id: string): void {
-    if (!enrolledIds.value.includes(id)) {
-      enrolledIds.value.push(id)
-    }
-  }
-
-  return {
-    favoriteIds: readonly(favoriteIds),
-    enrolledIds: readonly(enrolledIds),
-    favoriteCount,
-    addFavorite,
-    removeFavorite,
-    addEnrollment,
-  }
-})
-```
+Field-level editing of one entity (draft, dirty fields, PATCH, optimistic save) is `useEntityEditor` + `useOptimisticSave`, not this recipe.
 
 ---
 
@@ -408,13 +353,14 @@ export const useFormationStore = defineStore('formation', () => {
 | `defineProps<T>()` | Always use type-based, never runtime syntax |
 | `defineEmits<{...}>()` | Type-based with call signatures |
 | `const emit = defineEmits<{}>()` | Explicitly declare emits |
-| `await useAsyncData()` | Only in Orchestrators |
-| `useXxxStore()` | Never in Presenters |
+| Server reads | `useApiQuery(queryKeys.x…)` inside a domain composable, called from an Orchestrator |
+| Server writes | `useOptimisticListMutation` / `useEntityEditor` inside a domain composable; `$fetch`, never `useFetch` |
+| Query keys and URLs | Only from the `queryKeys` registry |
+| Server state in Pinia stores | Never — the Colada cache is the store |
 | `useRouter()` | Only in Orchestrators and Operators |
 | Export composables as named functions | `export function useFoo(): UseFooReturn` |
 | Composable return type | Always explicit: `UseFooReturn` interface |
-| Never throw in composables | Return `Result<T>` instead |
-| `console.log` | Forbidden — use `console.warn` or `console.error` |
+| `console.log` | Forbidden — use the evlog logger |
 | `@ts-ignore` | Forbidden — fix the underlying type issue |
 | Deep relative imports (`../../../`) | Forbidden — use `~/` or `@/` |
 

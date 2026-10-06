@@ -28,7 +28,7 @@ const route = useRoute()
 
 ### Orchestrator (Smartest)
 - Prefix: `Orc*.vue`
-- Brain of the feature: `useAsyncData`, stores, complex business logic, navigation
+- Brain of the feature: domain query/mutation composables (Pinia Colada), complex business logic, navigation
 - Distributes data to Operators and Presenters via props
 - Reusable in drawers, modals, integration tests
 - Max 3-4 concerns before splitting
@@ -38,16 +38,11 @@ const route = useRoute()
 <script setup>
 const props = defineProps<{ page: number; search?: string }>()
 
-const { data: users, status } = await useAsyncData(
-  'users',
-  () => $fetch('/api/users', { query: { page: props.page, q: props.search } })
-)
+const { users, isLoading } = useUserList(() => ({ page: props.page, q: props.search })) // useApiQuery + queryKeys
 
-const { addToRecent } = useRecentStore()
 const localePath = useLocalePath()
 
 async function handleSelect(user: User): Promise<void> {
-  addToRecent(user.id)
   await navigateTo(localePath({ name: 'users-id', params: { id: user.id } }))
 }
 
@@ -59,7 +54,7 @@ async function handlePageChange(page: number): Promise<void> {
 <template>
   <OpFilterableList
     :users="users"
-    :loading="status === 'pending'"
+    :loading="isLoading"
     @select="handleSelect"
     @page-change="handlePageChange"
   />
@@ -72,7 +67,7 @@ async function handlePageChange(page: number): Promise<void> {
 - Wires a group of Presenters together
 - Can use `useRouter` and business composables
 - Can read/write stores
-- **Cannot call `useAsyncData` / `useFetch` / `$fetch`** — that is the Orchestrator's role
+- **Cannot call `useApiQuery` / `useAsyncData` / `useFetch` / `$fetch`** — reads come from the Orchestrator as props, or through a domain composable
 - Max 3 concerns; if more, elevate to Orchestrator
 
 ```vue
@@ -141,9 +136,9 @@ export function useCartItems() {
 
 1. **The Page is an assembler, not a brain** — `definePageMeta`, `useSeoMeta`, middleware stay in the Page. Everything else (fetch, stores, logic) goes in an Orchestrator. Page NEVER renders Presenters directly.
 
-2. **The Orchestrator is the smartest component** — it manages `useAsyncData`, stores, complex navigation, business logic. It's the reusable brain of the feature.
+2. **The Orchestrator is the smartest component** — it calls the domain query/mutation composables, handles complex navigation and business logic. It's the reusable brain of the feature.
 
-3. **The Operator wires, doesn't fetch** — receives data via props, wires Presenters, transforms emits into handlers. Can touch `useRouter` and business composables, but NOT `useAsyncData`. Fetching is the Orchestrator's role.
+3. **The Operator wires, doesn't fetch** — receives data via props, wires Presenters, transforms emits into handlers. Can call domain composables, but never a raw data primitive (`useApiQuery`, `useQuery`, `$fetch`). Fetching is the Orchestrator's role.
 
 4. **Presenters are dumb** — props down, events up. No store, no fetch, no navigation, no transformation. Parent provides ready-to-display data.
 
@@ -178,7 +173,7 @@ export function useCartItems() {
 **S1 — Side effect in a component** (weight ×2)
 Grep for: `fetch(`, `axios.`, `$fetch(`, `useFetch(`, `useAsyncData(`, `localStorage.`, `sessionStorage.`, `new WebSocket`, `navigateTo(`, `useRouter(`, `router.push(`, `router.replace(` in `.vue` files that shouldn't have them.
 
-Context: `useAsyncData`/`useFetch` in an **Orchestrator** → normal. In an **Operator** or **Presenter** → violation. `useRouter` in Presenter → violation. In Page → only `useRoute` for reading params.
+Context: a domain query composable in an **Orchestrator** → normal; a raw `useAsyncData`/`useFetch`/`useApiQuery` call in a component → move it into a composable. In an **Operator** or **Presenter** → violation. `useRouter` in Presenter → violation. In Page → only `useRoute` for reading params.
 
 **S1b — Data transformation in a Presenter** (weight ×1)
 `computed()` that filters, maps, sorts, groups props. Date/number formatting beyond trivial. Key/enum resolution to display value. Parent should provide ready-to-display data.

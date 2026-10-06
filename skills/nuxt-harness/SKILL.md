@@ -48,7 +48,7 @@ The file prefix determines what ESLint allows. No discipline required — the bu
 ## The gate — run it, never suppress it
 
 The rules, static checks and CLI ship as the `@edumapper/nuxt-harness` package
-(`packages/nuxt-harness` in the host app). Two modes:
+([edumapper/nuxt-harness](https://github.com/edumapper/nuxt-harness), installed from GitHub by release tag). Two modes:
 
 | Command | When | What | Needs |
 |---|---|---|---|
@@ -93,6 +93,10 @@ See `references/eslint-rules.md` for every rule and its rationale.
 
 ### Consuming the package in a Nuxt repo
 
+```bash
+bun add -d github:edumapper/nuxt-harness#v<version> @vitest/coverage-v8
+```
+
 ```js
 // eslint.config.mjs
 import withNuxt from './.nuxt/eslint.config.mjs'
@@ -105,7 +109,8 @@ export default withNuxt(...harness(), ...typeAware(import.meta.dirname))
 { "scripts": { "check": "nuxt-harness full", "check:fast": "nuxt-harness fast" } }
 ```
 
-Agents in a fresh checkout can skip the install entirely: `bunx @edumapper/nuxt-harness fast`.
+Agents in a fresh checkout can skip the install entirely:
+`bunx --package github:edumapper/nuxt-harness#v<version> nuxt-harness fast`.
 
 ---
 

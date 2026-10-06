@@ -32,7 +32,7 @@ export default {
         '❌ {{count}} watchers in this file — max {{max}}',
         '💡 Watchers are hidden control flow: effects fire away from their cause, and watcher chains loop or go stale.',
         '🛠 Derived state → computed. Reaction to a user action → do it in that event handler. Prop sync → defineModel / computed get-set.',
-        '📖 packages/nuxt-harness/skill/references/eslint-rules.md#max-watchers'
+        '📖 https://github.com/edumapper/nuxt-harness/blob/main/skills/nuxt-harness/references/eslint-rules.md#max-watchers'
       ].join('\n')
     }
   },

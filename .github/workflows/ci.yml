@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Tag matches package version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          version="$(bun -p "require('./package.json').version")"
+          test "${GITHUB_REF_NAME}" = "v${version}" \
+            || { echo "::error::tag ${GITHUB_REF_NAME} != v${version}"; exit 1; }
+
+      - run: bun install --frozen-lockfile
+
+      - run: bun run test
+
+      # The way consumers' agents run it: packed, nothing else installed.
+      - name: Smoke test packed tarball
+        run: |
+          npm pack --pack-destination "$RUNNER_TEMP"
+          mkdir -p "$RUNNER_TEMP/app/app/components" && cd "$RUNNER_TEMP/app" && git init -q
+          printf '<script setup lang="ts">\nconst v: any = 1\n</script>\n' > app/components/Bad.vue
+          if npx --yes --package="$RUNNER_TEMP"/edumapper-nuxt-harness-*.tgz nuxt-harness fast --all; then
+            echo "::error::fast gate passed on a file with a violation"; exit 1
+          fi

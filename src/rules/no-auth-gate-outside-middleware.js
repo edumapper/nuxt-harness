@@ -38,7 +38,7 @@ export default {
         '❌ Auth check + redirect outside app/middleware',
         '💡 A gate in a page/component runs after rendering starts, is skipped on routes that don\'t mount it, and duplicates the access policy.',
         '🛠 Move the check into app/middleware (defineNuxtRouteMiddleware) and `return navigateTo(…)` there; keep the component for display.',
-        '📖 packages/nuxt-harness/skill/references/eslint-rules.md#no-auth-gate-outside-middleware'
+        '📖 https://github.com/edumapper/nuxt-harness/blob/main/skills/nuxt-harness/references/eslint-rules.md#no-auth-gate-outside-middleware'
       ].join('\n')
     }
   },

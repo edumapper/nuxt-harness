@@ -1,13 +1,13 @@
 # @edumapper/nuxt-harness
 
-Deterministic quality gate for Nuxt 4 apps: the 5-layer architecture rules (Page → Orc → Op →
-Presenter → Composable), locality and illegal-state rules, static checks, and CRAP. One command,
-two outputs: human text on stdout, `.harness/report.json` for agents and CI.
+Deterministic quality gate for Nuxt 4 apps. It covers the 5-layer architecture rules (Page → Orc → Op →
+Presenter → Composable), locality, guard and illegal-state rules, static checks, and CRAP. One command
+gives two outputs: human text on stdout, and `.harness/report.json` for agents and CI.
 
 ## Commands
 
 ```bash
-nuxt-harness fast [files…] [--all] [--json]   # changed files (vs origin/HEAD merge-base + untracked), ~1 s
+nuxt-harness fast [files…] [--all] [--json]    # changed files (vs origin/HEAD merge-base + untracked), ~1 s
 nuxt-harness full [--update-baseline] [--json] # everything; needs the app installed
 nuxt-harness hook                              # Claude Code PostToolUse adapter (stdin JSON → exit 2 + stderr)
 ```
@@ -16,23 +16,24 @@ nuxt-harness hook                              # Claude Code PostToolUse adapter
 (eslint, vue-eslint-parser, typescript-eslint), so an agent in a fresh worktree runs:
 
 ```bash
-bunx @edumapper/nuxt-harness fast
+bunx --package github:edumapper/nuxt-harness#v<version> nuxt-harness fast
 ```
 
 | Check | fast | full |
 |---|---|---|
 | Import hygiene, escape hatches, console, secrets, unvalidated `readBody`, i18n keys, TODO (warn) | ✓ | ✓ |
-| Harness ESLint rules (layers, locality, Vue contracts, design system, complexity) | ✓ | ✓ |
+| Harness ESLint rules (layers, locality, guards, Vue contracts, design system, complexity) | ✓ | ✓ |
 | `nuxt typecheck`, type-aware ESLint (app config), knip, cspell, jscpd, vitest + coverage | | ✓ |
 | CRAP ≤ 30 per `.ts` function | | ✓ |
 
-Rules and their rationale: [`skill/references/eslint-rules.md`](skill/references/eslint-rules.md).
-The agent skill lives in [`skill/`](skill/SKILL.md). Symlink it into `.claude/skills/nuxt-harness`.
+Rules and their rationale: [`skills/nuxt-harness/references/eslint-rules.md`](skills/nuxt-harness/references/eslint-rules.md).
+The agent skill is [`skills/nuxt-harness/`](skills/nuxt-harness/SKILL.md). Consumers symlink it from
+`node_modules/@edumapper/nuxt-harness/skills/nuxt-harness`, so it always matches the installed version.
 
 ## Adopting in a Nuxt repo
 
 ```bash
-bun add -d @edumapper/nuxt-harness @vitest/coverage-v8
+bun add -d github:edumapper/nuxt-harness#v<version> @vitest/coverage-v8
 ```
 
 ```js
@@ -51,40 +52,29 @@ export default withNuxt(...harness(), ...typeAware(import.meta.dirname))
 ```jsonc
 // .claude/settings.json: feedback lands before the agent moves on
 { "hooks": { "PostToolUse": [{ "matcher": "Edit|Write|MultiEdit", "hooks": [
-  { "type": "command", "command": "bunx @edumapper/nuxt-harness hook", "timeout": 60 }
+  { "type": "command", "command": "node_modules/.bin/nuxt-harness hook", "timeout": 60 }
 ] }] } }
 ```
 
-Add `.harness` to `.gitignore`. Existing violations: record them once, then they can only shrink:
+Add `.harness` to `.gitignore`. Record existing violations once. After that the counts can only go down:
 
 ```bash
 bunx eslint . --suppress-all              # → eslint-suppressions.json (read by both eslint and `fast`)
 bunx nuxt-harness full --update-baseline  # → nuxt-harness-baseline.json (CRAP)
 ```
 
-Bun's `minimumReleaseAge` also applies to this package. To pick up a fresh harness release
-immediately, add `minimumReleaseAgeExcludes = ["@edumapper/nuxt-harness"]` under `[install]` in `bunfig.toml`.
-
-## Installing from GitHub Packages
-
-The package is published to `npm.pkg.github.com` (org-private). Consumers need a token with
-`read:packages`:
-
-```toml
-# bunfig.toml
-[install.scopes]
-"@edumapper" = { url = "https://npm.pkg.github.com", token = "$GITHUB_TOKEN" }
-```
-
-Locally, run `gh auth refresh -s read:packages` once, then `export GITHUB_TOKEN=$(gh auth token)`.
-
 ## Releasing
 
-1. Bump `version` in `packages/nuxt-harness/package.json`.
-2. Push a tag `nuxt-harness-v<version>`. `.github/workflows/publish-nuxt-harness.yml` checks the
-   tag, smoke-tests the packed tarball with no app install (`npx … fast --all`), and publishes.
+1. Bump `version` in `package.json` and commit to `main`.
+2. Push the tag `v<version>`. CI checks that the tag matches the version and runs the tests.
+3. Consumers pin the tag (`github:edumapper/nuxt-harness#v<version>`). In the host app, the
+   `update-nuxt-harness` workflow picks up a new tag, bumps the dependency, runs the full gate, and opens a PR.
 
 ## Developing
 
-Tests run from the the host app root (`bun run test`) under `packages/nuxt-harness/test/`. The source
-is plain ESM JavaScript with JSDoc types: there is no build step, and it runs on Node ≥ 22 and Bun.
+```bash
+bun install
+bun run test   # vitest: rule tests (RuleTester) + static checks + CRAP
+```
+
+The source is plain ESM JavaScript with JSDoc types. There is no build step, and it runs on Node ≥ 22 and Bun.
