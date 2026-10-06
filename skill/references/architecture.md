@@ -44,15 +44,15 @@ const { data: users, status } = await useAsyncData(
 )
 
 const { addToRecent } = useRecentStore()
-const router = useRouter()
+const localePath = useLocalePath()
 
-function handleSelect(user: User): void {
+async function handleSelect(user: User): Promise<void> {
   addToRecent(user.id)
-  router.push(`/users/${user.id}`)
+  await navigateTo(localePath({ name: 'users-id', params: { id: user.id } }))
 }
 
-function handlePageChange(page: number): void {
-  router.push({ query: { page } })
+async function handlePageChange(page: number): Promise<void> {
+  await navigateTo({ query: { page } })
 }
 </script>
 

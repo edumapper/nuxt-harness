@@ -49,15 +49,15 @@ const { data: formations, status, error } = await useAsyncData(
 
 // Store access — Orchestrator's right
 const recentStore = useRecentStore()
-const router = useRouter()
+const localePath = useLocalePath()
 
-function handleSelect(formation: Formation): void {
+async function handleSelect(formation: Formation): Promise<void> {
   recentStore.addFormation(formation.id)
-  router.push(`/formations/${formation.slug}`)
+  await navigateTo(localePath({ name: 'formations-slug', params: { slug: formation.slug } }))
 }
 
-function handlePageChange(newPage: number): void {
-  router.push({ query: { page: newPage } })
+async function handlePageChange(newPage: number): Promise<void> {
+  await navigateTo({ query: { page: newPage } })
 }
 </script>
 
@@ -113,7 +113,7 @@ const page = ref(1)
   <!-- UInput replaces a custom SearchBar presenter -->
   <UInput
     v-model="searchText"
-    icon="i-heroicons-magnifying-glass"
+    icon="i-tabler-search"
     placeholder="Rechercher une formation…"
     class="mb-4"
   />
@@ -126,9 +126,9 @@ const page = ref(1)
   <!-- UAlert for errors — no custom ErrorBanner presenter needed -->
   <UAlert
     v-else-if="props.error"
-    color="red"
+    color="error"
     variant="soft"
-    icon="i-heroicons-exclamation-triangle"
+    icon="i-tabler-alert-triangle"
     :description="props.error"
   />
 
@@ -191,7 +191,7 @@ const emit = defineEmits<{
   <!-- UCard replaces the hand-rolled <article class="rounded-lg border"> pattern -->
   <UCard
     class="cursor-pointer"
-    :ui="{ body: { padding: 'p-0' } }"
+    :ui="{ body: 'p-0' }"
     @click="emit('click')"
   >
     <img :src="thumbnailUrl" :alt="title" class="w-full rounded-t-lg" />
@@ -202,8 +202,8 @@ const emit = defineEmits<{
 
       <div class="flex items-center justify-between mt-3">
         <!-- UBadge replaces <span class="text-xs"> -->
-        <UBadge color="gray" variant="soft">
-          <UIcon name="i-heroicons-clock" class="mr-1" />
+        <UBadge color="neutral" variant="soft">
+          <UIcon name="i-tabler-clock" class="mr-1" />
           {{ duration }}
         </UBadge>
 
@@ -211,7 +211,7 @@ const emit = defineEmits<{
         <UButton
           color="amber"
           variant="ghost"
-          :icon="isFavorite ? 'i-heroicons-star-solid' : 'i-heroicons-star'"
+          :icon="isFavorite ? 'i-tabler-star-filled' : 'i-tabler-star'"
           :aria-label="isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris'"
           @click.stop="emit('toggle-favorite')"
         />
@@ -228,12 +228,12 @@ const emit = defineEmits<{
 ```vue
 <!-- components/OrcEnrollmentForm.vue -->
 <script setup lang="ts">
-import * as v from 'valibot'
+import { z } from 'zod'
 
 // Schema lives in the Orchestrator — Presenters never own validation logic
-const schema = v.object({
-  email: v.pipe(v.string(), v.email('Email invalide')),
-  consent: v.literal(true, 'Vous devez accepter les conditions'),
+const schema = z.object({
+  email: z.email('Email invalide'),
+  consent: z.literal(true, 'Vous devez accepter les conditions'),
 })
 
 const state = reactive({ email: '', consent: false as boolean })
@@ -244,9 +244,9 @@ const toast = useToast()
 async function onSubmit(): Promise<void> {
   const result = await enroll(state.email)
   if (result.ok) {
-    toast.add({ title: 'Inscription confirmée', color: 'green', icon: 'i-heroicons-check-circle' })
+    toast.add({ title: 'Inscription confirmée', color: 'success', icon: 'i-tabler-circle-check' })
   } else {
-    toast.add({ title: 'Erreur', description: result.error, color: 'red' })
+    toast.add({ title: 'Erreur', description: result.error, color: 'error' })
   }
 }
 </script>
@@ -424,12 +424,12 @@ export const useFormationStore = defineStore('formation', () => {
 |---|---|
 | `<button class="bg-primary-500 …">` | `<UButton color="primary">` |
 | `<input class="border rounded …">` | `<UInput>` |
-| `<select>` / `<option>` | `<USelect :options>` |
-| `<table><thead><tr>…` | `<UTable :columns :rows>` |
+| `<select>` / `<option>` | `<USelect :items>` |
+| `<table><thead><tr>…` | `<UTable :data :columns>` |
 | `<div class="rounded-lg border p-4">` card | `<UCard>` |
-| `<span class="text-xs text-gray-400">` label | `<UBadge color="gray" variant="soft">` |
+| `<span class="text-xs text-zinc-400">` label | `<UBadge color="neutral" variant="soft">` |
 | `<div class="animate-pulse bg-gray-200">` skeleton | `<USkeleton>` |
-| `<div v-if="error" class="text-red-500">` | `<UAlert color="red">` |
+| `<div v-if="error" class="text-red-500">` | `<UAlert color="error">` |
 | Custom `AppButton.vue` wrapping `UButton` | Use `<UButton>` directly |
 | Custom `AppModal.vue` wrapping `UModal` | Use `<UModal>` directly in Operator |
 | Manual form error `<p>` tags | `<UForm :schema>` + `<UFormField>` |

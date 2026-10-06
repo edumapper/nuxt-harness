@@ -6,19 +6,19 @@
  *
  * ─── Why this matters ───────────────────────────────────────────────────────
  *
- * Tailwind ships 22+ built-in color palettes (blue, gray, slate, indigo, …).
+ * Tailwind ships 22+ built-in color palettes (gray, slate, indigo, …).
  * Without enforcement, an AI model or developer who forgets the palette rules
  * will reach for the familiar Tailwind defaults. This rule makes that a
  * hard build failure instead of a subtle drift.
  *
  * Allowed palettes (defined in app/assets/css/main.css @theme static block):
- *   zinc, brand, sand, green, yellow, red,
+ *   zinc, brand, blue, sand, green, yellow, red,
  *   accent-lavender, accent-pink, accent-tangerine, accent-forest, accent-lagoon
  *
  * Also allowed: white, black, transparent, current, inherit (Tailwind specials)
  *
  * What this catches:
- *   class="text-blue-500"       → blue not in palette
+ *   class="text-sky-500"        → sky not in palette
  *   class="bg-gray-100"         → gray not in palette (use zinc instead)
  *   class="hover:bg-indigo-600" → indigo not in palette
  *
@@ -34,7 +34,7 @@
 const FORBIDDEN_PALETTES = new Set([
   'slate', 'gray', 'stone', 'neutral',
   'orange', 'amber', 'lime', 'emerald',
-  'teal', 'cyan', 'sky', 'blue',
+  'teal', 'cyan', 'sky',
   'indigo', 'violet', 'purple', 'fuchsia',
   'pink', 'rose'
 ])
@@ -45,7 +45,7 @@ const FORBIDDEN_PALETTES = new Set([
  * case of accent-* palettes (accent-pink is allowed, bare pink is not).
  */
 function getOffPalette(cls) {
-  // Strip all variant prefixes: "dark:hover:bg-blue-500" → "bg-blue-500"
+  // Strip all variant prefixes: "dark:hover:bg-sky-500" → "bg-sky-500"
   const base = cls.split(':').at(-1) ?? cls
   const parts = base.split('-')
 
@@ -70,7 +70,7 @@ export default {
     messages: {
       offPalette: [
         '❌ Color class "{{cls}}" uses palette "{{palette}}" which is not in the design system.',
-        '💡 Allowed palettes: zinc, brand, sand (100/200/300), green, yellow, red,',
+        '💡 Allowed palettes: zinc, brand, blue, sand (100/200/300), green, yellow, red,',
         '   accent-lavender, accent-pink, accent-tangerine, accent-forest, accent-lagoon.',
         '🛠 Replace with a design system token, or add the palette to app/assets/css/main.css.'
       ].join('\n')

@@ -80,7 +80,7 @@ Principle: use early returns for states that really happen. Don't check states t
 | Rule | Forbids |
 |---|---|
 | `arch/no-hardcoded-color` | hex/rgb/hsl in templates, `style` or string literals. Use palette classes or `var(--color-*)`. |
-| `arch/no-off-palette-color-class` | Tailwind palettes outside `app/assets/css/main.css` (`gray`, `neutral`, `blue`, …) |
+| `arch/no-off-palette-color-class` | Tailwind palettes outside `app/assets/css/main.css` (`gray`, `neutral`, `sky`, …) |
 | `arch/no-nested-border-box` (warn) | bordered, rounded boxes inside other bordered surfaces |
 | `arch/no-figma-asset-url` | expiring Figma MCP asset URLs |
 

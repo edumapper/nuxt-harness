@@ -65,9 +65,16 @@ vueTester.run('no-presenter-in-page', noPresenterInPage, {
 })
 
 vueTester.run('no-off-palette-color-class', noOffPaletteColorClass, {
-  valid: [{ filename: 'app/components/X.vue', code: sfc('<div class="text-zinc-500 bg-accent-pink-100" />') }],
+  valid: [
+    { filename: 'app/components/X.vue', code: sfc('<div class="text-zinc-500 bg-accent-pink-100" />') },
+    // blue is a design-system palette (main.css defines --color-blue-*), not a Tailwind default here
+    { filename: 'app/components/X.vue', code: sfc('<div class="bg-blue-500" />') }
+  ],
   // Tailwind defaults bypass the design-system palette (use zinc, not neutral/gray).
-  invalid: [{ filename: 'app/components/X.vue', code: sfc('<div class="text-neutral-500" />'), errors: 1 }]
+  invalid: [
+    { filename: 'app/components/X.vue', code: sfc('<div class="text-neutral-500" />'), errors: 1 },
+    { filename: 'app/components/X.vue', code: sfc('<div class="text-sky-500" />'), errors: 1 }
+  ]
 })
 
 vueTester.run('no-hardcoded-color', noHardcodedColor, {

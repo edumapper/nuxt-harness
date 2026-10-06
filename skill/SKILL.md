@@ -1,11 +1,11 @@
 ---
 name: nuxt-harness
-description: This skill should be used when developing Nuxt 3 / Vue 3 applications. It enforces a 5-layer component architecture (Page → Orchestrator → Operator → Presenter → Composable), provides ESLint rules that mechanically enforce layer boundaries, a validation gate script, and TypeScript strict conventions. Use when creating or reviewing components, setting up a new Nuxt project, running code quality checks, or auditing an existing codebase for architectural violations.
+description: This skill should be used when developing Nuxt 4 / Vue 3 applications. It enforces a 5-layer component architecture (Page → Orchestrator → Operator → Presenter → Composable), provides ESLint rules that mechanically enforce layer boundaries, a validation gate script, and TypeScript strict conventions. Use when creating or reviewing components, setting up a new Nuxt project, running code quality checks, or auditing an existing codebase for architectural violations.
 ---
 
 # Nuxt Harness (`@edumapper/nuxt-harness`)
 
-Opinionated development harness for Nuxt 3 / Vue 3 with strict 5-layer architecture enforcement.
+Opinionated development harness for Nuxt 4 / Vue 3 with strict 5-layer architecture enforcement.
 
 ## Core Principle
 
@@ -137,21 +137,21 @@ hierarchy. Treat them like HTML elements — use them directly rather than re-wr
 | Layer        | NuxtUI usage |
 |--------------|--------------|
 | Presenter    | Renders NuxtUI atoms (`UButton`, `UBadge`, `UAvatar`, `UCard`, `UIcon`, …) |
-| Operator     | Composes structural NuxtUI blocks (`UModal`, `USlideOver`, `UTabs`, `UAccordion`) |
-| Orchestrator | Wires NuxtUI forms (`UForm`, `UFormField`) with Valibot/Zod schema validation |
+| Operator     | Composes structural NuxtUI blocks (`UModal`, `USlideover`, `UTabs`, `UAccordion`) |
+| Orchestrator | Wires NuxtUI forms (`UForm`, `UFormField`) with Zod schema validation |
 | Page         | Uses layout-level primitives (`UContainer`, `USkeleton`, top-level `UCard`) if needed |
 
 ### Key Component Families
 
 ```
 Atoms         UButton, UBadge, UAvatar, UIcon, UChip, UKbd, USeparator
-Inputs        UInput, UTextarea, USelect, UCheckbox, URadio, UToggle, URange
-Forms         UForm, UFormField  (validation via schema prop — Valibot or Zod)
-Layout        UCard, UContainer, UDivider
-Overlays      UModal, USlideOver, UDrawer, UPopover, UTooltip
-Navigation    UTabs, UVerticalNavigation, UCommandPalette, UBreadcrumb
-Feedback      USkeleton, UAlert, UProgress, UNotification (via useToast)
-Data          UTable (pass :columns + :rows, never build a table manually)
+Inputs        UInput, UTextarea, USelect, UCheckbox, URadioGroup, USwitch, USlider
+Forms         UForm, UFormField  (validation via the Zod schema prop)
+Layout        UCard, UContainer, USeparator
+Overlays      UModal, USlideover, UDrawer, UPopover, UTooltip
+Navigation    UTabs, UNavigationMenu, UCommandPalette, UBreadcrumb
+Feedback      USkeleton, UAlert, UProgress, toasts via useToast()
+Data          UTable (pass :data + :columns, never build a table manually)
 ```
 
 ### Prop Conventions
@@ -161,11 +161,11 @@ Data          UTable (pass :columns + :rows, never build a table manually)
 <UButton color="primary" variant="soft" size="sm" />
 
 <!-- ui prop — fine-grained class overrides per slot, only when needed -->
-<UCard :ui="{ body: { padding: 'p-0' } }" />
+<UCard :ui="{ body: 'p-0' }" />
 
-<!-- icon — use Heroicons name strings, not custom SVG components -->
-<UButton icon="i-heroicons-plus" />
-<UIcon name="i-heroicons-check-circle" class="text-green-500" />
+<!-- icon — use the project's Iconify collection (the host app: i-tabler-*), not custom SVG components -->
+<UButton icon="i-tabler-plus" />
+<UIcon name="i-tabler-circle-check" class="text-green-500" />
 ```
 
 ### Do / Don't
@@ -184,10 +184,10 @@ Data          UTable (pass :columns + :rows, never build a table manually)
 ```
 
 ```vue
-<!-- ✅ UForm + UFormField in an Orchestrator, with Valibot schema -->
+<!-- ✅ UForm + UFormField in an Orchestrator, with a Zod schema -->
 <script setup lang="ts">
-import * as v from 'valibot'
-const schema = v.object({ email: v.pipe(v.string(), v.email()) })
+import { z } from 'zod'
+const schema = z.object({ email: z.email() })
 const state = reactive({ email: '' })
 async function onSubmit() { /* $fetch call */ }
 </script>
@@ -206,7 +206,7 @@ async function onSubmit() { /* $fetch call */ }
 ```vue
 <!-- ✅ UTable in a Presenter — columns declared once, no manual <tr> -->
 <template>
-  <UTable :columns="columns" :rows="rows" @select="emit('select', $event)" />
+  <UTable :data="rows" :columns="columns" @select="(row) => emit('select', row.original)" />
 </template>
 
 <!-- ❌ Never hand-write <table><thead><tr> when UTable exists -->
@@ -217,7 +217,7 @@ async function onSubmit() { /* $fetch call */ }
 ```ts
 // In an Orchestrator or composable — never directly in a Presenter
 const toast = useToast()
-toast.add({ title: 'Saved', icon: 'i-heroicons-check-circle', color: 'green' })
+toast.add({ title: 'Saved', icon: 'i-tabler-circle-check', color: 'success' })
 ```
 
 ### Anti-patterns to Avoid
@@ -227,9 +227,9 @@ toast.add({ title: 'Saved', icon: 'i-heroicons-check-circle', color: 'green' })
 | `<button class="bg-primary-500 ...">` | `<UButton color="primary">` |
 | `<input class="border rounded ...">` | `<UInput>` |
 | Custom `AppModal.vue` wrapping `UModal` | Use `UModal` directly in the Operator |
-| Manual `<table>` markup | `<UTable :columns :rows>` |
+| Manual `<table>` markup | `<UTable :data :columns>` |
 | Custom `AppCard.vue` | `<UCard>` with `ui` prop overrides |
-| Raw `<select>` | `<USelect :options>` |
+| Raw `<select>` | `<USelect :items>` |
 
 See `references/gold-standards.md` for complete examples using NuxtUI primitives in each layer.
 
