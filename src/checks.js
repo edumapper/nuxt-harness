@@ -2,7 +2,7 @@
 /**
  * Static checks — pure file scans, no dependencies, no `.nuxt/`.
  *
- * Each check takes `{ root, files }` (paths relative to root) and returns findings.
+ * Each check takes `{ root, files, options }` (paths relative to root) and returns findings.
  * Checks that ESLint already enforces (layers, empty catch) are not duplicated here.
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
@@ -10,7 +10,7 @@ import { join } from 'node:path'
 
 /**
  * @typedef {{ check: string, file: string, line: number, rule?: string, message: string, severity: 'error' | 'warning' }} Finding
- * @typedef {{ root: string, files: string[] }} CheckContext
+ * @typedef {{ root: string, files: string[], options?: import('./config.js').HarnessOptions }} CheckContext
  * @typedef {{ name: string, run: (ctx: CheckContext) => Finding[] }} Check
  */
 
@@ -117,15 +117,19 @@ export const secretScan = check('Secret scan', function* (ctx) {
 })
 
 // ─── Unvalidated readBody ───────────────────────────────────────────────────
-// Every readBody() result must reach .safeParse()/.parse() on the same line or within
-// the next few lines — otherwise the server trusts `any`. h3's readValidatedBody(event,
-// schema.parse) validates in one call and is never flagged.
+// Every readBody() result — or one of the app's own `bodyReaders` — must reach
+// .safeParse()/.parse() on the same line or within the next few lines, otherwise the server
+// trusts `any`. h3's readValidatedBody(event, schema.parse) validates in one call and is never flagged.
 const BODY_PARSE_LOOKAHEAD = 3
-const READ_BODY = /\b(readBody)\s*\(/
-const ASSIGNED = /\b(?:const|let)\s+(\w+)\s*=\s*await\s+readBody\s*\(/
 const PARSED = /safeParse\s*\(|\.parse\s*\(/
 
 export const unvalidatedReadBody = check('Unvalidated readBody', function* (ctx) {
+  const readers = ['readBody', ...(ctx.options?.bodyReaders ?? [])].join('|')
+  // `readJsonBody<Input>(event)`: an optional type argument sits between the name and the call
+  const call = `(?:<[^>]*>)?\\s*\\(`
+  // the reader's own definition (`function readJsonBody<T>(`) is not a call
+  const READ_BODY = new RegExp(`(?<!function\\s+)\\b(${readers})\\s*${call}`)
+  const ASSIGNED = new RegExp(`\\b(?:const|let)\\s+(\\w+)\\s*=\\s*await\\s+(?:${readers})\\s*${call}`)
   for (const file of ctx.files) {
     if (!/(?:^|\/)server\//.test(file) || !file.endsWith('.ts')) continue
     const src = lines(ctx, file)

@@ -102,7 +102,7 @@ Plain file scans in [`src/checks.js`](../../../src/checks.js), run by both gates
 | Escape hatches | `@ts-ignore`/`@ts-nocheck`/`@ts-expect-error`; blanket `eslint-disable`; any disable of a harness rule; other disables without `-- reason` |
 | Console hygiene | `console.log/debug/info` outside tests (`warn`/`error` allowed) |
 | Secret scan | Stripe keys, hardcoded passwords/API keys/tokens, long base64 literals |
-| Unvalidated `readBody` | `readBody()` in `server/` whose result isn't `.parse()`d within 3 lines. Prefer `readValidatedBody`. |
+| Unvalidated `readBody` | `readBody()` (and the app's `bodyReaders`) in `server/` whose result isn't `.parse()`d within 3 lines. Prefer `readValidatedBody`. |
 | i18n keys | static `t('a.b')` keys missing from any JSON file in `i18n/locales/` (or `locales/`) |
 | TODO markers | `TODO`/`FIXME`/`HACK` (warning) |
 
