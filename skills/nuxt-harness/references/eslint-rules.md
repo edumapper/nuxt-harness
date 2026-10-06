@@ -94,7 +94,11 @@ Off by default — the harness ships no design tokens. Enable with `designSystem
 
 ## Static checks (not ESLint)
 
-Plain file scans in [`src/checks.js`](../../../src/checks.js), run by both gates:
+Plain file scans in [`src/checks.js`](../../../src/checks.js), run by both gates. The code checks
+read code and strings only: comments are skipped (HTML comments too, in `.vue` templates). Escape
+hatches and TODO markers read comments, since that is what they check. Existing errors can be
+recorded with `nuxt-harness full --update-baseline` (`nuxt-harness-baseline.json`, per check and
+file; warnings are never recorded).
 
 | Check | Reports |
 |---|---|

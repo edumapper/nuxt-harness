@@ -25,6 +25,7 @@ import { lint } from './lint.js'
 
 const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
 const BASELINE_FILE = 'nuxt-harness-baseline.json'
+const CRAP_CHECK = 'CRAP (complexity × coverage)'
 const MAX_PRINTED = 15
 // A Stop hook that always blocks would loop forever on an error the agent cannot fix.
 const MAX_STOP_BLOCKS = 3
@@ -88,6 +89,51 @@ function fastChecks(root, files, options) {
     ...STATIC_CHECKS.map(c => timed(c.name, () => c.run(ctx))),
     timed('ESLint (harness rules)', () => lint(root, files, options))
   ])
+}
+
+// ─── Baseline ───────────────────────────────────────────────────────────────
+// nuxt-harness-baseline.json records legacy violations the gate tolerates: CRAP hits and the
+// static checks' errors, as file → count. ESLint keeps its own eslint-suppressions.json.
+/** @typedef {{ crap?: Record<string, number>, checks?: Record<string, Record<string, number>> }} Baseline */
+
+const BASELINED = new Set([...STATIC_CHECKS.map(c => c.name), CRAP_CHECK])
+
+/** @param {string} root @returns {Baseline} */
+function readBaseline(root) {
+  const path = join(root, BASELINE_FILE)
+  return existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : {}
+}
+
+/** @param {Baseline} baseline @param {string} name */
+const allowed = (baseline, name) => (name === CRAP_CHECK ? baseline.crap : baseline.checks?.[name]) ?? {}
+
+/**
+ * Records every baselined check's current errors. Rewrites the file: entries only ever shrink
+ * when this runs after fixes, and it must never run to absorb new violations.
+ * @param {CheckReport[]} checks @returns {Baseline}
+ */
+function baselineOf(checks) {
+  /** @type {Baseline} */
+  const baseline = { crap: {}, checks: {} }
+  for (const c of checks) {
+    if (!BASELINED.has(c.name)) continue
+    const counts = baselineFrom(c.findings.filter(f => f.severity === 'error'))
+    if (c.name === CRAP_CHECK) baseline.crap = counts
+    else if (Object.keys(counts).length > 0) /** @type {Record<string, Record<string, number>>} */ (baseline.checks)[c.name] = counts
+  }
+  return baseline
+}
+
+/**
+ * A check's errors pass per file while their count stays ≤ the recorded count; one more and all
+ * of that file's errors report. Warnings are never baselined.
+ * @param {CheckReport} check @param {Baseline} baseline @returns {CheckReport}
+ */
+function ratchet(check, baseline) {
+  if (!BASELINED.has(check.name)) return check
+  const errors = applyBaseline(check.findings.filter(f => f.severity === 'error'), allowed(baseline, check.name))
+  const findings = [...errors, ...check.findings.filter(f => f.severity !== 'error')]
+  return { ...check, findings, status: errors.length > 0 ? 'fail' : 'pass' }
 }
 
 /** The app's package manager, from its lockfile. @param {string} root */
@@ -210,15 +256,17 @@ export async function runGate(mode, { root, files, all, updateBaseline, config }
   if (mode === 'full') {
     const tools = await Promise.all(toolSteps(srcDir).map(step => runTool(root, step)))
     // CRAP joins complexity with the coverage the vitest step just wrote.
-    const crapCheck = await timed('CRAP (complexity × coverage)', async () => {
-      const findings = await crapFindings(root, selected, options)
-      if (updateBaseline) writeFileSync(join(root, BASELINE_FILE), `${JSON.stringify({ crap: baselineFrom(findings) }, null, 2)}\n`)
-      const baselinePath = join(root, BASELINE_FILE)
-      const baseline = existsSync(baselinePath) ? JSON.parse(readFileSync(baselinePath, 'utf8')).crap ?? {} : {}
-      return applyBaseline(findings, baseline)
-    })
+    const crapCheck = await timed(CRAP_CHECK, () => crapFindings(root, selected, options))
     checks = [...checks, ...tools, crapCheck]
   }
+
+  // Only the full gate sees every file, so only it may rewrite the baseline.
+  let baseline = readBaseline(root)
+  if (mode === 'full' && updateBaseline) {
+    baseline = baselineOf(checks)
+    writeFileSync(join(root, BASELINE_FILE), `${JSON.stringify(baseline, null, 2)}\n`)
+  }
+  checks = checks.map(c => ratchet(c, baseline))
 
   const errors = checks.flatMap(c => c.findings).filter(f => f.severity === 'error').length
   return {
