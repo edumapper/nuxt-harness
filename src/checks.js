@@ -53,7 +53,7 @@ export const importHygiene = check('Import hygiene', function* (ctx) {
 // never target a rule the harness owns.
 const TS_SUPPRESSION = /@ts-(ignore|nocheck|expect-error)\b/
 const ESLINT_DISABLE = /eslint-disable(?:-next-line|-line)?(?=\s|\*\/|-->|$)(.*)/
-const HARNESS_OWNED = /^(arch\/|complexity$|max-params$|no-empty$|no-unsafe-finally$|no-restricted-(syntax|imports)$|@typescript-eslint\/(no-explicit-any|no-restricted-imports|switch-exhaustiveness-check|no-unnecessary-condition|no-unsafe-return)$|vue\/(define-props-declaration|define-emits-declaration|require-typed-ref|no-setup-props-reactivity-loss)$)/
+const HARNESS_OWNED = /^(arch\/|complexity$|max-params$|max-depth$|no-else-return$|no-empty$|no-unsafe-finally$|no-restricted-(syntax|imports)$|@typescript-eslint\/(no-explicit-any|no-restricted-imports|switch-exhaustiveness-check|no-unnecessary-condition|no-unnecessary-type-assertion|no-unsafe-return)$|vue\/(define-props-declaration|define-emits-declaration|require-typed-ref|no-setup-props-reactivity-loss)$)/
 
 export const escapeHatches = check('Escape hatches', function* (ctx) {
   for (const file of ctx.files) {

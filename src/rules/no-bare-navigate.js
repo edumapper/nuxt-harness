@@ -2,7 +2,8 @@
  * ESLint Rule: no-bare-navigate
  *
  * Enforces correct navigation patterns in Nuxt:
- *   1. navigateTo() must always be awaited or returned — never called bare.
+ *   1. navigateTo() must be awaited or returned; any other use needs a comment
+ *      on the line above (or trailing) explaining why it is not awaited.
  *   2. router.push() / router.replace() / router.go() are banned — use navigateTo().
  *
  * ─── Why this matters for AI-generated code ────────────────────────────────
@@ -73,30 +74,38 @@ function isNavigateToCall(node) {
 }
 
 /**
- * True when the CallExpression's value is discarded — i.e. the expression is
- * used as a statement rather than as a value passed somewhere.
- *
- * Safe (not bare):
- *   await navigateTo(...)          — AwaitExpression, parent may be anything
- *   return navigateTo(...)         — ReturnStatement child
- *   return await navigateTo(...)   — ReturnStatement > AwaitExpression
- *   const x = navigateTo(...)      — VariableDeclarator / AssignmentExpression
- *   () => navigateTo(...)          — ArrowFunctionExpression implicit return
- *
- * Bare (value dropped):
- *   navigateTo(...)                — ExpressionStatement direct child
+ * True when the navigateTo() promise is handed to the caller — the forms that
+ * need no explanation:
+ *   await navigateTo(...)          — AwaitExpression
+ *   return navigateTo(...)         — ReturnStatement (route middleware)
+ *   () => navigateTo(...)          — arrow implicit return
+ *   return Promise.resolve(navigateTo(...)) — argument of a call that is itself handed off
+ * Anything else (bare statement, `void`, `.then()`, assignment, argument) is
+ * "not awaited" and must carry a comment saying why.
  */
-function isBareCall(node, parent) {
-  // Direct ExpressionStatement → the return value is thrown away
-  if (parent.type === 'ExpressionStatement') return true
+function isHandedOff(node) {
+  const parent = node.parent
+  if (!parent) return true
+  if (parent.type === 'AwaitExpression' || parent.type === 'ReturnStatement') return true
+  if (parent.type === 'ArrowFunctionExpression' && parent.body === node) return true
+  // Wrapped and handed off as a whole: return Promise.resolve(navigateTo(...))
+  return parent.type === 'CallExpression' && parent.arguments.includes(node) && isHandedOff(parent)
+}
 
-  // Comma expression: (a, navigateTo(...)) — uncommon but possible
-  if (parent.type === 'SequenceExpression') {
-    const last = parent.expressions[parent.expressions.length - 1]
-    return last === node
-  }
+/** The statement (or class member) that contains the call — where the comment belongs. */
+function enclosingStatement(node) {
+  let current = node
+  while (current.parent && !/Statement$|Declaration$/.test(current.type)) current = current.parent
+  return current
+}
 
-  return false
+/** A comment on the line directly above the statement, or trailing on the call's own line. */
+function hasExplanation(sourceCode, node) {
+  const statement = enclosingStatement(node)
+  const before = sourceCode.getCommentsBefore(statement).at(-1)
+  if (before && before.loc.end.line >= statement.loc.start.line - 1) return true
+  const line = node.loc.end.line
+  return sourceCode.getAllComments().some(c => c.loc.start.line === line && c.range[0] > node.range[0])
 }
 
 /** True when the node is a router.push/replace/go call. */
@@ -133,20 +142,21 @@ export default {
   meta: {
     type: 'problem',
     docs: {
-      description: 'Require await/return on navigateTo(); ban router.push/replace/go',
+      description: 'Require await/return (or an explaining comment) on navigateTo(); ban router.push/replace/go',
       category: 'Best Practices'
     },
     schema: [],
     messages: {
       bareNavigateTo: [
-        '❌ navigateTo() called without await or return — the redirect will be silently dropped.',
+        '❌ navigateTo() not awaited or returned, and no comment says why.',
         '💡 navigateTo() returns a Promise. On the server side, the redirect is only sent when',
         '   the Promise resolves. Dropping it means the handler continues executing and the',
         '   redirect may never fire. In middleware, a bare call lets the chain keep running',
         '   past the guard — a security hole.',
         '🛠 In async functions:  return await navigateTo(...)',
         '   In middleware:       return navigateTo(...)',
-        '   In arrow functions:  () => navigateTo(...) (implicit return is fine)'
+        '   In arrow functions:  () => navigateTo(...) (implicit return is fine)',
+        '   Deliberately fire-and-forget? Add a comment on the line above saying why.'
       ].join('\n'),
 
       routerDirectCall: [
@@ -166,19 +176,10 @@ export default {
 
   create(context) {
     return {
-      // Check for bare navigateTo() calls
+      // navigateTo() must be awaited/returned, or explained by a comment
       CallExpression(node) {
-        if (!isNavigateToCall(node)) return
-
-        const parent = node.parent
-        if (!parent) return
-
-        // If the parent is an AwaitExpression, it's always safe
-        if (parent.type === 'AwaitExpression') return
-
-        if (isBareCall(node, parent)) {
-          context.report({ node, messageId: 'bareNavigateTo' })
-        }
+        if (!isNavigateToCall(node) || isHandedOff(node)) return
+        if (!hasExplanation(context.sourceCode, node)) context.report({ node, messageId: 'bareNavigateTo' })
       },
 
       // Check for router.push / router.replace / router.go

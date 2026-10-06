@@ -1,6 +1,6 @@
 {
   "name": "@edumapper/nuxt-harness",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Deterministic architecture gate for Nuxt 4 apps: 5-layer ESLint rules, static checks, CRAP, and a fast agent mode that needs neither the app's node_modules nor .nuxt/.",
   "license": "UNLICENSED",
   "type": "module",

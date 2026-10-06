@@ -34,8 +34,9 @@ every file (see `test/rules.test.ts`).
 | | `shared/**` | app and server code: `shared/` stays isomorphic |
 | | all | event buses: `mitt`, `tiny-emitter`, `eventemitter3`, `events` |
 | `no-restricted-syntax` | `app/**` | `navigateTo('/…')` / `` navigateTo(`/…`) ``. Use `localePath({ name })`. |
-| | components, pages, layouts | `inject()`. Wrap it in a composable with a typed `InjectionKey`. |
-| `arch/no-bare-navigate` | `app/**` | un-awaited `navigateTo()`, `router.push/replace/go` |
+| `arch/no-provide-inject` <a id="no-provide-inject"></a> | `app/**` | Vue `provide()`/`inject()`/`vueApp.provide`. Pass props down or share a composable. Nuxt plugin `provide` stays allowed. |
+| `arch/no-auth-gate-outside-middleware` <a id="no-auth-gate-outside-middleware"></a> | components, pages, layouts | a branch that tests `useSupabaseUser()`/`useSupabaseSession()` and redirects. Access policy lives in `app/middleware`. Displaying the user is fine. |
+| `arch/no-bare-navigate` | `app/**` | `navigateTo()` that is not awaited or returned, unless a comment on the line above (or at the end of the line) explains why; `router.push/replace/go` |
 
 ## Structural invariants & illegal states
 
@@ -49,6 +50,21 @@ every file (see `test/rules.test.ts`).
 | `@typescript-eslint/switch-exhaustiveness-check` (type-aware) | adding a union member must break every switch that forgot it |
 | `@typescript-eslint/no-unnecessary-condition` (type-aware) | a condition the types prove constant is dead code or a lying type |
 | `@typescript-eslint/no-unsafe-return` (type-aware) | returning `any` leaks it into every caller |
+
+## Guards & reactivity
+
+Principle: use early returns for states that really happen. Don't check states the types or another layer already rule out.
+
+| # | Rule | Enforced by |
+|---|---|---|
+| R1 | No checks for impossible states (`?.`, `??`, `if (!x)` on a non-nullable). If the type is wrong, fix the type. | `@typescript-eslint/no-unnecessary-condition`, `no-unnecessary-type-assertion` (type-aware) |
+| R2 | A guard with more than 2 operands goes into a named `computed` or function, ideally one returning the blocking reason (`submitBlock`). | `arch/max-condition-operands` <a id="max-condition-operands"></a> (counts every `&&`/`||` leaf, including right-nested `a \|\| (b && c)`; `??` is not counted) |
+| R3 | Exit early. No `else` after a return, no deep nesting. | `no-else-return` (`allowElseIf: false`), `max-depth: 2` |
+| R4 | Gates live with their owner: auth checks and redirects go in `app/middleware`. | `arch/no-auth-gate-outside-middleware` |
+| R5 | A `v-if`/`v-else-if`/`v-show` with more than 2 operands becomes a computed. | `arch/max-condition-operands` |
+| R6 | Async handlers set the lock before the first `await`. | code review, not lintable |
+| | No more than 3 watchers per file. Derived state is a `computed`; a reaction to a user action goes in that handler; prop sync uses `defineModel`. | `arch/max-watchers` <a id="max-watchers"></a> |
+| | Every `<ClientOnly>` is directly preceded by an HTML comment (4+ words) saying why the subtree can't render on the server. | `arch/client-only-needs-reason` <a id="client-only-needs-reason"></a> |
 
 ## Control flow & size
 

@@ -11,7 +11,11 @@
  *   - `typeAware()`      rules that need the TypeScript program. Full gate only:
  *                        they need `nuxt prepare` (auto-import types) to be meaningful.
  */
+import clientOnlyNeedsReason from './rules/client-only-needs-reason.js'
 import maxBooleanProps from './rules/max-boolean-props.js'
+import maxConditionOperands from './rules/max-condition-operands.js'
+import maxWatchers from './rules/max-watchers.js'
+import noAuthGateOutsideMiddleware from './rules/no-auth-gate-outside-middleware.js'
 import noBareNavigate from './rules/no-bare-navigate.js'
 import noDataCallsInOperator from './rules/no-data-calls-in-operator.js'
 import noFigmaAssetUrl from './rules/no-figma-asset-url.js'
@@ -19,6 +23,7 @@ import noHardcodedColor from './rules/no-hardcoded-color.js'
 import noNestedBorderBox from './rules/no-nested-border-box.js'
 import noOffPaletteColorClass from './rules/no-off-palette-color-class.js'
 import noPresenterInPage from './rules/no-presenter-in-page.js'
+import noProvideInject from './rules/no-provide-inject.js'
 import noReverseLayerImport from './rules/no-reverse-layer-import.js'
 import noServerUiImport from './rules/no-server-ui-import.js'
 import noSmartCallsInPresenter from './rules/no-smart-calls-in-presenter.js'
@@ -28,7 +33,11 @@ import noSmartCallsInPresenter from './rules/no-smart-calls-in-presenter.js'
 export const arch = {
   meta: { name: '@edumapper/nuxt-harness' },
   rules: {
+    'client-only-needs-reason': clientOnlyNeedsReason,
     'max-boolean-props': maxBooleanProps,
+    'max-condition-operands': maxConditionOperands,
+    'max-watchers': maxWatchers,
+    'no-auth-gate-outside-middleware': noAuthGateOutsideMiddleware,
     'no-bare-navigate': noBareNavigate,
     'no-data-calls-in-operator': noDataCallsInOperator,
     'no-figma-asset-url': noFigmaAssetUrl,
@@ -36,6 +45,7 @@ export const arch = {
     'no-nested-border-box': noNestedBorderBox,
     'no-off-palette-color-class': noOffPaletteColorClass,
     'no-presenter-in-page': noPresenterInPage,
+    'no-provide-inject': noProvideInject,
     'no-smart-calls': noSmartCallsInPresenter,
     'no-server-ui-import': noServerUiImport,
     'no-reverse-layer': noReverseLayerImport
@@ -69,10 +79,6 @@ const NAVIGATE_TEMPLATE = {
   selector: 'CallExpression[callee.name=\'navigateTo\'] > TemplateLiteral.arguments:first-child[quasis.0.value.raw=/^\\//]',
   message: NAVIGATE_LITERAL.message
 }
-const INJECT_OUTSIDE_COMPOSABLE = {
-  selector: 'CallExpression[callee.name=\'inject\']',
-  message: '❌ inject() in a component. 💡 Untraceable dependency: nothing at the call site says who provides it. 🛠 Wrap it in composables/use*.ts with a typed InjectionKey.'
-}
 
 /** Rule blocks — no parser/plugin definitions besides `arch`. */
 export function harness() {
@@ -92,7 +98,14 @@ export function harness() {
         // Long positional parameter lists are the cheapest SRP smell to detect.
         'max-params': ['error', 4],
         '@typescript-eslint/no-explicit-any': 'error',
-        'arch/no-figma-asset-url': 'error'
+        'arch/no-figma-asset-url': 'error',
+        // ── Guards: early return for real states, named compound conditions ──
+        // Exit early instead of else/else-if after a return.
+        'no-else-return': ['error', { allowElseIf: false }],
+        // Deep nesting is the shape of missing early returns.
+        'max-depth': ['error', 2],
+        // A guard with 3+ operands has a meaning — name it (computed / function).
+        'arch/max-condition-operands': 'error'
       }
     },
     {
@@ -110,7 +123,9 @@ export function harness() {
         'vue/define-props-declaration': ['error', 'type-based'],
         'vue/define-emits-declaration': ['error', 'type-based'],
         'vue/require-typed-ref': 'error',
-        'vue/no-setup-props-reactivity-loss': 'error'
+        'vue/no-setup-props-reactivity-loss': 'error',
+        // Dropping SSR must be a written decision, not a hydration-warning silencer.
+        'arch/client-only-needs-reason': 'error'
       }
     },
 
@@ -135,14 +150,19 @@ export function harness() {
           message: '❌ app/ imports server code. 💡 Server modules pull DB/secrets into the client bundle. 🛠 Import the Zod schema from ~~/server/utils/validators/ or a type from #shared.'
         }]),
         'no-restricted-syntax': ['error', NAVIGATE_LITERAL, NAVIGATE_TEMPLATE],
-        'arch/no-bare-navigate': 'error'
+        'arch/no-bare-navigate': 'error',
+        // Untyped, invisible dependencies — props down or a shared composable instead.
+        'arch/no-provide-inject': 'error',
+        // Watchers are hidden control flow; most are a computed or an event handler.
+        'arch/max-watchers': 'error'
       }
     },
     {
       name: 'nuxt-harness/locality-ui',
       files: ['app/components/**/*.vue', 'app/pages/**/*.vue', 'app/layouts/**/*.vue'],
       rules: {
-        'no-restricted-syntax': ['error', NAVIGATE_LITERAL, NAVIGATE_TEMPLATE, INJECT_OUTSIDE_COMPOSABLE]
+        // Access policy lives in app/middleware, not in what it protects.
+        'arch/no-auth-gate-outside-middleware': 'error'
       }
     },
     {
@@ -211,7 +231,9 @@ export function typeAware(tsconfigRootDir = process.cwd()) {
       '@typescript-eslint/switch-exhaustiveness-check': ['error', { considerDefaultExhaustiveForUnions: true }],
       // A condition the types prove constant is either dead code or a lying type.
       '@typescript-eslint/no-unnecessary-condition': 'error',
-      '@typescript-eslint/no-unsafe-return': 'error'
+      '@typescript-eslint/no-unsafe-return': 'error',
+      // A cast the types already satisfy hides the real type from the next reader.
+      '@typescript-eslint/no-unnecessary-type-assertion': 'error'
     }
   }]
 }

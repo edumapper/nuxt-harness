@@ -75,8 +75,10 @@ below the recorded count. One more violation and all of them report. These files
 |---|---|
 | Structural invariants | `strict` + `noUncheckedIndexedAccess` (Nuxt 4 default), `@typescript-eslint/no-explicit-any`, `vue/define-props-declaration`/`define-emits-declaration: type-based`, `vue/require-typed-ref`, `nuxt typecheck` |
 | Single source of truth | Zod schemas + `z.infer` (no OpenAPI here), `vue/no-setup-props-reactivity-loss`, i18n key check (every static `t('…')` key exists in every locale), jscpd, knip |
-| Illegal states | `arch/max-boolean-props` (3+ boolean props), `switch-exhaustiveness-check`, `no-unnecessary-condition` (type-aware, full gate) |
-| Locality | R0–R4 layer rules, import boundaries (`app` ↛ `server` except validators/types, `server` ↛ `app`, `shared` ↛ both), no event bus (`mitt`…), `inject()` only in composables, no `navigateTo('/…')` string paths |
+| Illegal states | `arch/max-boolean-props` (3+ boolean props), `switch-exhaustiveness-check`, `no-unnecessary-condition` / `no-unnecessary-type-assertion` (type-aware, full gate) |
+| Guards | named compound conditions (`arch/max-condition-operands`, max 2 operands in `if`/`v-if`/`v-show`), `no-else-return`, `max-depth: 2`, auth gates only in middleware, lock before the first `await` (review) |
+| Reactivity & SSR | `arch/max-watchers` (≤ 3 per file), no `provide`/`inject`, `navigateTo` awaited/returned or commented, `<ClientOnly>` preceded by a comment explaining why SSR isn't used |
+| Locality | R0–R4 layer rules, import boundaries (`app` ↛ `server` except validators/types, `server` ↛ `app`, `shared` ↛ both), no event bus (`mitt`…), no `provide`/`inject`, no `navigateTo('/…')` string paths |
 | CRAP | `complexity` ≤ 20 everywhere; CRAP = c² × (1 − cov)³ + c ≤ 30 per function in `.ts` (full gate, vitest coverage) |
 | SOLID | `max-params` ≤ 4 as a weak proxy; the rest is review work |
 
