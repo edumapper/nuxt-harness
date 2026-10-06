@@ -9,7 +9,8 @@ gives two outputs: human text on stdout, and `.harness/report.json` for agents a
 ```bash
 nuxt-harness fast [files…] [--all] [--json]    # changed files (vs origin/HEAD merge-base + untracked), ~1 s
 nuxt-harness full [--update-baseline] [--json] # everything; needs the app installed
-nuxt-harness hook                              # Claude Code PostToolUse adapter (stdin JSON → exit 2 + stderr)
+nuxt-harness hook                              # Claude Code PostToolUse: gate the edited file (exit 2 + stderr)
+nuxt-harness stop                              # Claude Code Stop: the turn can't end while changed files fail
 ```
 
 `fast` needs neither the app's `node_modules` nor `.nuxt/`. It parses with its own dependencies
@@ -50,10 +51,18 @@ export default withNuxt(...harness(), ...typeAware(import.meta.dirname))
 ```
 
 ```jsonc
-// .claude/settings.json: feedback lands before the agent moves on
-{ "hooks": { "PostToolUse": [{ "matcher": "Edit|Write|MultiEdit", "hooks": [
-  { "type": "command", "command": "node_modules/.bin/nuxt-harness hook", "timeout": 60 }
-] }] } }
+// .claude/settings.json
+{ "hooks": {
+  // after each edit: feedback lands before the agent moves on
+  "PostToolUse": [{ "matcher": "Edit|Write|MultiEdit", "hooks": [
+    { "type": "command", "command": "node_modules/.bin/nuxt-harness hook", "timeout": 60 }
+  ] }],
+  // end of turn: every file changed on the branch (Bash edits included) must pass;
+  // blocks at most 3 times in a row per session, then warns the user instead
+  "Stop": [{ "hooks": [
+    { "type": "command", "command": "node_modules/.bin/nuxt-harness stop", "timeout": 120 }
+  ] }]
+} }
 ```
 
 Add `.harness` to `.gitignore`. Record existing violations once. After that the counts can only go down:

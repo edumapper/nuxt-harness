@@ -52,7 +52,7 @@ The rules, static checks and CLI ship as the `@edumapper/nuxt-harness` package
 
 | Command | When | What | Needs |
 |---|---|---|---|
-| `nuxt-harness fast` (`bun run check:fast`) | after every edit — the Claude Code PostToolUse hook runs it on the edited file | static checks + harness ESLint rules on changed files (~1 s) | nothing: no app `node_modules`, no `.nuxt/` |
+| `nuxt-harness fast` (`bun run check:fast`) | after every edit — the PostToolUse hook runs it on the edited file, and the Stop hook on every file changed on the branch before a turn can end | static checks + harness ESLint rules on changed files (~1 s) | nothing: no app `node_modules`, no `.nuxt/` |
 | `nuxt-harness full` (`bun run check`) | before declaring done, and in CI | fast checks on every file + `nuxt typecheck`, type-aware ESLint, knip, cspell, jscpd, vitest + CRAP | `bun install` |
 
 Both print `❌ what → 💡 why → 🛠 fix → 📖 doc` findings and write `.harness/report.json`

@@ -8,9 +8,11 @@
  *           type-aware ESLint, knip, cspell, jscpd, vitest + CRAP). Needs `bun install`.
  *   hook  — Claude Code PostToolUse adapter: reads the hook JSON on stdin, runs `fast`
  *           on the edited file, exits 2 with findings on stderr so the agent sees them.
+ *   stop  — Claude Code Stop adapter: runs `fast` on every file changed on the branch
+ *           (Bash edits included) and blocks the end of the turn while errors remain.
  */
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative } from 'node:path'
 
 import { STATIC_CHECKS } from './checks.js'
@@ -24,6 +26,8 @@ const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.u
 const BASELINE_FILE = 'nuxt-harness-baseline.json'
 const SCOPE = /^(app|server|shared|modules)\/.+\.(vue|ts|js|mjs)$/
 const MAX_PRINTED = 15
+// A Stop hook that always blocks would loop forever on an error the agent cannot fix.
+const MAX_STOP_BLOCKS = 3
 
 const tty = process.stdout.isTTY
 const paint = (/** @type {string} */ code) => (/** @type {string} */ s) => tty ? `\x1b[${code}m${s}\x1b[0m` : s
@@ -219,8 +223,9 @@ export async function main(argv) {
   const files = rest.filter(a => !a.startsWith('--'))
 
   if (command === 'hook') return hook()
+  if (command === 'stop') return stop()
   if (command !== 'fast' && command !== 'full') {
-    process.stderr.write('usage: nuxt-harness <fast [files…] [--all] | full [--update-baseline] | hook> [--json]\n')
+    process.stderr.write('usage: nuxt-harness <fast [files…] [--all] | full [--update-baseline] | hook | stop> [--json]\n')
     return 64
   }
 
@@ -239,22 +244,80 @@ export async function main(argv) {
   return report.passed ? 0 : 1
 }
 
-/** Claude Code PostToolUse: exit 2 + stderr feeds the findings back to the agent. */
-async function hook() {
+/** @returns {Promise<Record<string, any>>} the hook event JSON Claude Code writes on stdin */
+async function readHookInput() {
   let input = ''
   for await (const chunk of process.stdin) input += chunk
+  return JSON.parse(input || '{}')
+}
+
+/** @param {Finding[]} errors @param {boolean} withFile */
+function writeErrors(errors, withFile) {
+  for (const f of errors.slice(0, MAX_PRINTED)) {
+    const at = withFile ? `${f.file}${f.line ? `:${f.line}` : ''} ` : (f.line ? `L${f.line} ` : '')
+    process.stderr.write(`  ✗ ${at}${f.rule ? `[${f.rule}] ` : ''}${f.message.split('\n').join('\n      ')}\n`)
+  }
+  if (errors.length > MAX_PRINTED) process.stderr.write(`  … ${errors.length - MAX_PRINTED} more in .harness/report.json\n`)
+}
+
+/** @param {{ checks: CheckReport[] }} report */
+const errorsOf = report => report.checks.flatMap(c => c.findings).filter(f => f.severity === 'error')
+
+/** Claude Code PostToolUse: exit 2 + stderr feeds the findings back to the agent. */
+async function hook() {
   /** @type {string | undefined} */
-  const file = JSON.parse(input || '{}').tool_input?.file_path
+  const file = (await readHookInput()).tool_input?.file_path
   if (!file) return 0
-  // The edited file may live in a different worktree than the session's cwd.
-  const root = projectRoot(isAbsolute(file) ? dirname(file) : process.cwd())
-  const rel = toRelative(root, file)
+  // The edited file may live in a different worktree than the session's cwd. git reports real
+  // paths, so resolve symlinks (macOS /var → /private/var, symlinked checkouts) before comparing.
+  const abs = isAbsolute(file) ? file : join(process.cwd(), file)
+  if (!existsSync(abs)) return 0
+  const real = realpathSync(abs)
+  const root = projectRoot(dirname(real))
+  const rel = relative(root, real)
   if (inScope([rel]).length === 0) return 0
 
-  const report = await runGate('fast', { root, files: [rel] })
-  const errors = report.checks.flatMap(c => c.findings).filter(f => f.severity === 'error')
+  const errors = errorsOf(await runGate('fast', { root, files: [rel] }))
   if (errors.length === 0) return 0
   process.stderr.write(`nuxt-harness: ${errors.length} error(s) in ${rel} — fix before moving on:\n`)
-  for (const f of errors.slice(0, MAX_PRINTED)) process.stderr.write(`  ✗ ${f.line ? `L${f.line} ` : ''}${f.rule ? `[${f.rule}] ` : ''}${f.message.split('\n').join('\n      ')}\n`)
+  writeErrors(errors, false)
+  return 2
+}
+
+/**
+ * Claude Code Stop: the turn cannot end while files changed on the branch fail the fast gate.
+ * Covers what the PostToolUse hook cannot see (files written through Bash, codegen). Blocks at
+ * most MAX_STOP_BLOCKS times in a row per session, then lets the turn end and tells the user.
+ */
+async function stop() {
+  const input = await readHookInput()
+  const root = projectRoot(typeof input.cwd === 'string' ? input.cwd : process.cwd())
+  const report = await runGate('fast', { root })
+  writeReport(root, report)
+  const errors = errorsOf(report)
+
+  const statePath = join(root, '.harness', 'stop-state.json')
+  /** @type {{ session?: string, blocks?: number }} */
+  let state = {}
+  try {
+    state = JSON.parse(readFileSync(statePath, 'utf8'))
+  } catch {
+    state = {} // first stop of the session, or an unreadable leftover: start counting again
+  }
+  const blocks = state.session === input.session_id ? (state.blocks ?? 0) : 0
+  const save = (/** @type {number} */ n) => writeFileSync(statePath, JSON.stringify({ session: input.session_id, blocks: n }))
+
+  if (errors.length === 0) {
+    save(0)
+    return 0
+  }
+  if (blocks >= MAX_STOP_BLOCKS) {
+    save(0)
+    process.stdout.write(`${JSON.stringify({ systemMessage: `nuxt-harness: ${errors.length} error(s) remain in files changed on this branch after ${MAX_STOP_BLOCKS} attempts — see .harness/report.json` })}\n`)
+    return 0
+  }
+  save(blocks + 1)
+  process.stderr.write(`nuxt-harness: ${errors.length} error(s) in files changed on this branch — fix them before finishing (check ${blocks + 1}/${MAX_STOP_BLOCKS}):\n`)
+  writeErrors(errors, true)
   return 2
 }
