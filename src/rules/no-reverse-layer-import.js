@@ -52,28 +52,27 @@ export default {
     schema: [],
     messages: {
       presenterImportsOp: [
-        '❌ <{{file}}> importe {{imported}} — un Presenter ne peut pas importer un Operator',
-        '💡 Les Presenters reçoivent des données via props uniquement.',
-        '   Importer un Op introduit une dépendance à la logique de câblage',
-        '   et casse la testabilité du composant.',
-        '🛠 Extrayez la logique partagée dans composables/use*.ts',
-        '   et consommez-la dans l\'Operator. Passez le résultat au Presenter via props.'
+        '❌ <{{file}}> imports {{imported}} — a Presenter cannot import an Operator',
+        '💡 Presenters receive data through props only.',
+        '   Importing an Op adds a dependency on wiring logic',
+        '   and breaks the component\'s testability.',
+        '🛠 Extract the shared logic into composables/use*.ts,',
+        '   use it in the Operator and pass the result to the Presenter through props.'
       ].join('\n'),
 
       presenterImportsOrc: [
-        '❌ <{{file}}> importe {{imported}} — un Presenter ne peut pas importer un Orchestrator',
-        '💡 Les Presenters sont des afficheurs purs. Un Orchestrator contient',
-        '   du fetch, des stores et de la logique métier — tout ce qu\'un Presenter',
-        '   ne doit pas voir.',
-        '🛠 Faites remonter la donnée via la chaîne Orc → Op → props.'
+        '❌ <{{file}}> imports {{imported}} — a Presenter cannot import an Orchestrator',
+        '💡 Presenters only display. An Orchestrator holds fetching, stores and',
+        '   business logic — everything a Presenter must not see.',
+        '🛠 Pass the data down the chain: Orc → Op → props.'
       ].join('\n'),
 
       opImportsOrc: [
-        '❌ <{{file}}> importe {{imported}} — un Operator ne peut pas importer un Orchestrator',
-        '💡 Le flux est unidirectionnel : Orc orchestre Op, pas l\'inverse.',
-        '   Un Op qui importe un Orc crée un couplage circulaire potentiel',
-        '   et cache du fetch/store logic là où ça ne devrait pas être.',
-        '🛠 Extrayez la logique partagée dans composables/use*.ts.'
+        '❌ <{{file}}> imports {{imported}} — an Operator cannot import an Orchestrator',
+        '💡 The flow is one-way: Orc drives Op, never the reverse.',
+        '   An Op importing an Orc risks a circular dependency and hides',
+        '   fetch/store logic where it doesn\'t belong.',
+        '🛠 Extract the shared logic into composables/use*.ts.'
       ].join('\n')
     }
   },

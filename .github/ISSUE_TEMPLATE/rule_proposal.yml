@@ -1,0 +1,23 @@
+name: Rule proposal
+description: Suggest a new check, or a change to an existing one
+labels: [rule-proposal]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem it catches
+      description: What goes wrong in real code (bonus points for agent-written code), and why review alone misses it.
+    validations:
+      required: true
+  - type: textarea
+    id: examples
+    attributes:
+      label: Invalid and valid examples
+      render: vue
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Default or opt-in?
+      description: Does it hold for any Nuxt 4 app, or does it depend on a module, library or team convention?

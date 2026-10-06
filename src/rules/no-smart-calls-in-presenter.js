@@ -9,42 +9,48 @@
  * Targets: components/**\/*.vue excluding Orc*.vue and Op*.vue
  *
  *
+ * Options: `{ dataComposables: string[] }` — the app's own data-layer composables
+ * (e.g. a `useApiQuery` wrapper), reported like `useFetch`.
+ *
  * Enabled by harness() in @edumapper/nuxt-harness/eslint.
  */
+import { docsUrl } from './docs.js'
 
-const DOCS_URL = '/docs/architecture-en-couches'
+const DOCS_URL = docsUrl('no-smart-calls')
 
 // ─── Contextual Messages ──────────────────────────────────────────────────────
 // Each violation type gets a message tailored to its context.
 // Format: ❌ What → 💡 Why → 🛠 What to do → 📖 Docs
 
-/** @param {string} name */
 const MESSAGES = {
+  /** @param {string} name */
   store: name => [
-    `❌ ${name}() — accès store interdit dans un Presenter`,
-    `💡 Les Presenters sont bêtes : ils ne savent pas que les stores existent.`,
-    `   Un store crée une dépendance invisible qui casse la testabilité.`,
-    `🛠 Déplacez dans un Operator (Op*.vue) ou un composable (composables/use*.ts).`,
-    `   Passez le résultat au Presenter via props.`,
-    `📖 ${DOCS_URL}#stores`
+    `❌ ${name}() — store access in a Presenter`,
+    `💡 Presenters are dumb: they don't know stores exist.`,
+    `   A store is an invisible dependency that breaks testability.`,
+    `🛠 Move the call to an Operator (Op*.vue) or a composable (composables/use*.ts)`,
+    `   and pass the result to the Presenter through props.`,
+    `📖 ${DOCS_URL}`
   ].join('\n'),
 
+  /** @param {string} name */
   navigation: name => [
-    `❌ ${name}() — navigation interdite dans un Presenter`,
-    `💡 Un Presenter ne décide pas où aller. Il émet un event,`,
-    `   et l'Operator (Op*.vue) ou l'Orchestrator (Orc*.vue) décide quoi en faire.`,
-    `🛠 Remplacez par : emit('navigate', { to: '...' })`,
-    `   Puis dans le Op*.vue : @navigate="router.push($event.to)"`,
-    `📖 ${DOCS_URL}#regles`
+    `❌ ${name}() — navigation in a Presenter`,
+    `💡 A Presenter doesn't decide where to go. It emits an event,`,
+    `   and the Operator (Op*.vue) or Orchestrator (Orc*.vue) decides what to do.`,
+    `🛠 Replace with: emit('select', item)`,
+    `   then in the Op*.vue: @select="handleSelect" → await navigateTo(…)`,
+    `📖 ${DOCS_URL}`
   ].join('\n'),
 
+  /** @param {string} name */
   fetch: name => [
-    `❌ ${name}() — data fetching interdit dans un Presenter`,
-    `💡 Le Presenter reçoit des données prêtes via props.`,
-    `   Le fetching appartient à l'Orchestrator (Orc*.vue) ou à un composable.`,
-    `🛠 Déplacez l'appel dans l'Orchestrator ou un composable,`,
-    `   puis passez le résultat via Orchestrator → Operator → props.`,
-    `📖 ${DOCS_URL}#nuxt`
+    `❌ ${name}() — data fetching in a Presenter`,
+    `💡 A Presenter receives ready-to-display data through props.`,
+    `   Fetching belongs to the Orchestrator (Orc*.vue) or a composable.`,
+    `🛠 Move the call to the Orchestrator or a composable,`,
+    `   then pass the result down: Orchestrator → Operator → props.`,
+    `📖 ${DOCS_URL}`
   ].join('\n')
 }
 
@@ -55,23 +61,21 @@ const STORE_PATTERN = /^use\w+Store$/
 // Navigation composables (Nuxt auto-imports)
 const NAV_CALLS = new Set(['useRouter', 'navigateTo', 'useRoute'])
 
-// Data fetching composables — Nuxt auto-imports, Pinia Colada primitives, and the app's own
-// data-layer composables (cache reads, optimistic writes, prefetch). A Presenter touching any of
-// them owns data access it cannot be tested without.
-const FETCH_CALLS = new Set([
+// Data fetching primitives — Nuxt auto-imports and Pinia Colada / TanStack Query. The app adds
+// its own data-layer composables through the `dataComposables` option. A Presenter touching any
+// of them owns data access it cannot be tested without.
+const FETCH_CALLS = [
   // Nuxt
   'useFetch', 'useLazyFetch', 'useAsyncData', 'useLazyAsyncData', '$fetch',
-  // Pinia Colada
-  'useQuery', 'useMutation', 'useQueryCache',
-  // App data layer (app/composables)
-  'useApiQuery', 'useOptimisticListMutation', 'useOptimisticSave', 'usePrefetch'
-])
+  // Pinia Colada, TanStack Query
+  'useQuery', 'useMutation', 'useQueryCache', 'useQueryClient', 'useInfiniteQuery'
+]
 
-/** @param {string} name */
-function classifyCall(name) {
+/** @param {string} name @param {Set<string>} fetchCalls */
+function classifyCall(name, fetchCalls) {
   if (STORE_PATTERN.test(name)) return 'store'
   if (NAV_CALLS.has(name)) return 'navigation'
-  if (FETCH_CALLS.has(name)) return 'fetch'
+  if (fetchCalls.has(name)) return 'fetch'
   return null
 }
 
@@ -84,15 +88,16 @@ export default {
       category: 'Architecture',
       url: DOCS_URL
     },
-    schema: []
+    schema: [{ type: 'object', properties: { dataComposables: { type: 'array', items: { type: 'string' } } }, additionalProperties: false }]
   },
 
   create(context) {
+    const fetchCalls = new Set([...FETCH_CALLS, ...(context.options[0]?.dataComposables ?? [])])
     return {
       CallExpression(node) {
         // Handle direct calls: useFetch(...), navigateTo(...)
         if (node.callee.type === 'Identifier') {
-          const type = classifyCall(node.callee.name)
+          const type = classifyCall(node.callee.name, fetchCalls)
           if (!type) return
 
           context.report({

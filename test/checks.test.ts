@@ -24,15 +24,20 @@ afterEach(() => {
 })
 
 describe('unvalidatedReadBody', () => {
-  it('flags readJsonBody whose result is never parsed — the body stays untrusted `unknown`', () => {
-    const findings = unvalidatedReadBody.run(fixture({ 'server/api/x.patch.ts': 'const body = await readJsonBody(event)\n\nreturn save(body)\n' }))
+  it('flags readBody whose result is never parsed — the body stays untrusted `any`', () => {
+    const findings = unvalidatedReadBody.run(fixture({ 'server/api/x.patch.ts': 'const body = await readBody(event)\n\nreturn save(body)\n' }))
     expect(findings).toHaveLength(1)
-    expect(findings[0]?.message).toContain('readJsonBody()')
+    expect(findings[0]?.message).toContain('readValidatedBody')
   })
 
   it('flags the two-line form when a different variable is parsed', () => {
-    const findings = unvalidatedReadBody.run(fixture({ 'server/api/x.patch.ts': 'const body = await readJsonBody(event)\nconst parsed = schema.safeParse(other)\n' }))
+    const findings = unvalidatedReadBody.run(fixture({ 'server/api/x.patch.ts': 'const body = await readBody(event)\nconst parsed = schema.safeParse(other)\n' }))
     expect(findings).toHaveLength(1)
+  })
+
+  it('accepts readValidatedBody and checks server routes inside layers', () => {
+    expect(unvalidatedReadBody.run(fixture({ 'server/api/x.post.ts': 'const body = await readValidatedBody(event, schema.parse)\n' }))).toEqual([])
+    expect(unvalidatedReadBody.run(fixture({ 'layers/base/server/api/x.post.ts': 'const body = await readBody(event)\n' }))).toHaveLength(1)
   })
 
   it('accepts the body parsed on the next line', () => {

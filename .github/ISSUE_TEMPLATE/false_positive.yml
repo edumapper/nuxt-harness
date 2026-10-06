@@ -1,0 +1,24 @@
+name: False positive
+description: A rule flagged code that is correct
+labels: [false-positive]
+body:
+  - type: input
+    id: rule
+    attributes:
+      label: Rule
+      placeholder: arch/no-smart-calls
+    validations:
+      required: true
+  - type: textarea
+    id: code
+    attributes:
+      label: Code and file path
+      render: vue
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why it is correct
+    validations:
+      required: true

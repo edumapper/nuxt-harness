@@ -2,15 +2,18 @@
 /**
  * @edumapper/nuxt-harness — ESLint flat config.
  *
- * Two entry points:
- *   - `harness()`        rule blocks only. Spread into `withNuxt(...)` — the
- *                        Nuxt config already registers the `vue` and
- *                        `@typescript-eslint` plugins, so they are not redefined here.
- *   - `standalone()`     parsers + plugins + `harness()`. Used by `nuxt-harness fast`,
- *                        which lints without `.nuxt/` or the app's node_modules.
- *   - `typeAware()`      rules that need the TypeScript program. Full gate only:
- *                        they need `nuxt prepare` (auto-import types) to be meaningful.
+ * Three entry points:
+ *   - `harness(options)`    rule blocks only. Spread into `withNuxt(...)` — the
+ *                           Nuxt config already registers the `vue` and
+ *                           `@typescript-eslint` plugins, so they are not redefined here.
+ *   - `typeAware(rootDir)`  rules that need the TypeScript program. Full gate only:
+ *                           they need `nuxt prepare` (auto-import types) to be meaningful.
+ *   - `standalone(options)` parsers + plugins + `harness()`. Used by `nuxt-harness fast`,
+ *                           which lints without `.nuxt/` or the app's node_modules.
+ *
+ * Options are documented in ./config.js and skills/nuxt-harness/references/configuration.md.
  */
+import { appGlobs, resolveOptions, rootGlobs } from './config.js'
 import clientOnlyNeedsReason from './rules/client-only-needs-reason.js'
 import maxBooleanProps from './rules/max-boolean-props.js'
 import maxConditionOperands from './rules/max-condition-operands.js'
@@ -30,6 +33,7 @@ import noSmartCallsInPresenter from './rules/no-smart-calls-in-presenter.js'
 
 // ESLint flat config requires plugin objects to be referentially identical
 // across config blocks — every block shares this instance.
+/** @type {any} */
 export const arch = {
   meta: { name: '@edumapper/nuxt-harness' },
   rules: {
@@ -52,10 +56,8 @@ export const arch = {
   }
 }
 
-/** Nuxt source globs the harness owns. */
-export const SOURCE_FILES = ['app/**/*.{vue,ts,js}', 'server/**/*.{ts,js}', 'shared/**/*.{ts,js}', 'modules/**/*.{vue,ts,js}']
+/** @typedef {import('./config.js').HarnessOptions} HarnessOptions */
 
-/** Layer-locality boundaries: which top-level dirs may import which. */
 const EVENT_BUS = {
   paths: ['mitt', 'tiny-emitter', 'eventemitter3', 'events'].map(name => ({
     name,
@@ -73,20 +75,33 @@ function restrictedImports(patterns) {
 
 const NAVIGATE_LITERAL = {
   selector: 'CallExpression[callee.name=\'navigateTo\'] > Literal.arguments:first-child[value=/^\\//]',
-  message: '❌ navigateTo(\'/…\') string path. 💡 Bypasses i18n prefixes and typed routes. 🛠 navigateTo(localePath({ name: \'…\' })).'
+  message: '❌ navigateTo(\'/…\') string path. 💡 Bypasses i18n locale prefixes. 🛠 navigateTo(localePath({ name: \'…\' })).'
 }
 const NAVIGATE_TEMPLATE = {
   selector: 'CallExpression[callee.name=\'navigateTo\'] > TemplateLiteral.arguments:first-child[quasis.0.value.raw=/^\\//]',
   message: NAVIGATE_LITERAL.message
 }
 
-/** Rule blocks — no parser/plugin definitions besides `arch`. */
-export function harness() {
+/**
+ * Rule blocks — no parser/plugin definitions besides `arch`.
+ * @param {HarnessOptions} [options]
+ * @returns {import('eslint').Linter.Config[]}
+ */
+export function harness(options) {
+  const o = resolveOptions(options)
+  /** @param {string} glob */
+  const app = glob => appGlobs(o.srcDir, glob)
+  const server = rootGlobs('server', '**/*.{ts,js}')
+  const shared = rootGlobs('shared', '**/*.{ts,js}')
+  const appCode = app('**/*.{vue,ts,js}')
+  const appVue = [...app('**/*.vue'), ...rootGlobs('modules', '**/*.vue')]
+  const components = app('components/**/*.vue')
+
   return [
     // ── Control flow & complexity ────────────────────────────────────────────
     {
       name: 'nuxt-harness/base',
-      files: SOURCE_FILES,
+      files: [...appCode, ...server, ...shared, ...rootGlobs('modules', '**/*.{vue,ts,js}')],
       plugins: { arch },
       rules: {
         // A control-flow statement in finally silently discards the in-flight throw/return.
@@ -118,7 +133,7 @@ export function harness() {
     // ── Vue: type-based contracts ────────────────────────────────────────────
     {
       name: 'nuxt-harness/vue-contracts',
-      files: ['app/**/*.vue', 'modules/**/*.vue'],
+      files: appVue,
       rules: {
         'vue/define-props-declaration': ['error', 'type-based'],
         'vue/define-emits-declaration': ['error', 'type-based'],
@@ -129,27 +144,16 @@ export function harness() {
       }
     },
 
-    // ── Design system (app only — modules/design-system showcases raw values) ─
-    {
-      name: 'nuxt-harness/design-system',
-      files: ['app/**/*.vue'],
-      rules: {
-        'arch/no-hardcoded-color': 'error',
-        'arch/no-off-palette-color-class': 'error',
-        'arch/no-nested-border-box': 'warn'
-      }
-    },
-
     // ── Locality: import boundaries between app / server / shared ────────────
     {
       name: 'nuxt-harness/locality-app',
-      files: ['app/**/*.{vue,ts,js}'],
+      files: appCode,
       rules: {
         '@typescript-eslint/no-restricted-imports': restrictedImports([{
-          group: ['~~/server/**', '!~~/server/utils/validators/**'],
-          message: '❌ app/ imports server code. 💡 Server modules pull DB/secrets into the client bundle. 🛠 Import the Zod schema from ~~/server/utils/validators/ or a type from #shared.'
+          group: ['~~/server/**', ...o.allowServerImportsInApp.map(g => `!${g}`)],
+          message: '❌ app/ imports server code. 💡 Server modules pull DB access and secrets into the client bundle. 🛠 Move the schema or type to shared/ and import it from #shared.'
         }]),
-        'no-restricted-syntax': ['error', NAVIGATE_LITERAL, NAVIGATE_TEMPLATE],
+        ...(o.i18n ? { 'no-restricted-syntax': ['error', NAVIGATE_LITERAL, NAVIGATE_TEMPLATE] } : {}),
         'arch/no-bare-navigate': 'error',
         // Untyped, invisible dependencies — props down or a shared composable instead.
         'arch/no-provide-inject': 'error',
@@ -159,26 +163,26 @@ export function harness() {
     },
     {
       name: 'nuxt-harness/locality-ui',
-      files: ['app/components/**/*.vue', 'app/pages/**/*.vue', 'app/layouts/**/*.vue'],
+      files: [...components, ...app('pages/**/*.vue'), ...app('layouts/**/*.vue')],
       rules: {
-        // Access policy lives in app/middleware, not in what it protects.
-        'arch/no-auth-gate-outside-middleware': 'error'
+        // Access policy lives in middleware, not in what it protects.
+        'arch/no-auth-gate-outside-middleware': ['error', { composables: o.authComposables }]
       }
     },
     {
       name: 'nuxt-harness/locality-server',
-      files: ['server/**/*.{ts,js}'],
+      files: server,
       rules: {
         '@typescript-eslint/no-restricted-imports': restrictedImports([{
           group: ['~/**', '@/**', '~~/app/**', '#app', '#components'],
-          message: '❌ server/ imports app code. 💡 Couples the Worker bundle to the Vue runtime. 🛠 Move the logic to shared/ or server/utils/.'
+          message: '❌ server/ imports app code. 💡 Couples the server bundle to the Vue runtime. 🛠 Move the logic to shared/ or server/utils/.'
         }]),
         'arch/no-server-ui-import': 'error'
       }
     },
     {
       name: 'nuxt-harness/locality-shared',
-      files: ['shared/**/*.{ts,js}'],
+      files: shared,
       rules: {
         '@typescript-eslint/no-restricted-imports': restrictedImports([{
           group: ['~/**', '@/**', '~~/app/**', '~~/server/**', '#app', '#components'],
@@ -190,21 +194,21 @@ export function harness() {
     // ── Architecture: the 5-layer model (R0–R4) ──────────────────────────────
     {
       name: 'nuxt-harness/layer-pages',
-      files: ['app/pages/**/*.vue'],
+      files: app('pages/**/*.vue'),
       rules: { 'arch/no-presenter-in-page': 'error' }
     },
     {
       name: 'nuxt-harness/layer-presenters',
-      files: ['app/components/**/*.vue'],
-      ignores: ['app/components/**/Orc*.vue', 'app/components/**/Op*.vue'],
+      files: components,
+      ignores: [...app('components/**/Orc*.vue'), ...app('components/**/Op*.vue')],
       rules: {
-        'arch/no-smart-calls': 'error',
+        'arch/no-smart-calls': ['error', { dataComposables: o.dataComposables }],
         'arch/no-reverse-layer': 'error'
       }
     },
     {
       name: 'nuxt-harness/layer-operators',
-      files: ['app/components/**/Op*.vue'],
+      files: app('components/**/Op*.vue'),
       rules: {
         'arch/no-reverse-layer': 'error',
         'arch/no-data-calls-in-operator': 'error'
@@ -212,17 +216,42 @@ export function harness() {
     },
     {
       name: 'nuxt-harness/illegal-states',
-      files: ['app/components/**/*.vue'],
+      files: components,
       rules: { 'arch/max-boolean-props': 'error' }
-    }
+    },
+
+    // ── Design system: opt-in, configured by the app ─────────────────────────
+    ...designSystem(o, app('**/*.vue'))
   ]
 }
 
-/** Rules that need type information (`parserOptions.projectService`). Full gate only. */
-export function typeAware(tsconfigRootDir = process.cwd()) {
+/**
+ * @param {import('./config.js').ResolvedOptions} o
+ * @param {string[]} files
+ * @returns {import('eslint').Linter.Config[]}
+ */
+function designSystem(o, files) {
+  const ds = o.designSystem
+  if (!ds) return []
+  /** @type {import('eslint').Linter.RulesRecord} */
+  const rules = {}
+  if (ds.hardcodedColors) rules['arch/no-hardcoded-color'] = 'error'
+  if (ds.palettes) rules['arch/no-off-palette-color-class'] = ['error', { palettes: ds.palettes }]
+  if (ds.nestedBorderBox) rules['arch/no-nested-border-box'] = ['warn', { surfaceComponents: ds.surfaceComponents }]
+  return [{ name: 'nuxt-harness/design-system', files, rules }]
+}
+
+/**
+ * Rules that need type information (`parserOptions.projectService`). Full gate only.
+ * @param {string} [tsconfigRootDir]
+ * @param {HarnessOptions} [options]
+ * @returns {import('eslint').Linter.Config[]}
+ */
+export function typeAware(tsconfigRootDir = process.cwd(), options = {}) {
+  const { srcDir } = resolveOptions({ root: tsconfigRootDir, ...options })
   return [{
     name: 'nuxt-harness/type-aware',
-    files: ['app/**/*.{vue,ts}', 'server/**/*.ts', 'shared/**/*.ts'],
+    files: [...appGlobs(srcDir, '**/*.{vue,ts}'), ...rootGlobs('server', '**/*.ts'), ...rootGlobs('shared', '**/*.ts')],
     // Nuxt's root tsconfig is solution-style (references into .nuxt/); the project
     // service resolves each file to the referenced project that owns it.
     languageOptions: { parserOptions: { projectService: true, tsconfigRootDir } },
@@ -241,8 +270,10 @@ export function typeAware(tsconfigRootDir = process.cwd()) {
 /**
  * Self-contained config for `nuxt-harness fast`: no `.nuxt/`, no app node_modules.
  * Resolves parsers/plugins from the harness package's own dependencies.
+ * @param {HarnessOptions} [options]
+ * @returns {Promise<import('eslint').Linter.Config[]>}
  */
-export async function standalone() {
+export async function standalone(options) {
   const [{ default: vue }, { default: vueParser }, { default: tsPlugin }, { default: tsParser }] = await Promise.all([
     import('eslint-plugin-vue'),
     import('vue-eslint-parser'),
@@ -267,6 +298,6 @@ export async function standalone() {
     // Disable comments for rules outside the harness set would otherwise be reported as unused.
     { linterOptions: { reportUnusedDisableDirectives: 'off' } },
     { plugins: { 'vue': vue, '@typescript-eslint': tsPlugin, arch } },
-    ...harness()
+    ...harness(options)
   ]
 }

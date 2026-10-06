@@ -11,6 +11,7 @@ import noAuthGateOutsideMiddleware from '../src/rules/no-auth-gate-outside-middl
 import noBareNavigate from '../src/rules/no-bare-navigate.js'
 import noDataCallsInOperator from '../src/rules/no-data-calls-in-operator.js'
 import noHardcodedColor from '../src/rules/no-hardcoded-color.js'
+import noNestedBorderBox from '../src/rules/no-nested-border-box.js'
 import noOffPaletteColorClass from '../src/rules/no-off-palette-color-class.js'
 import noPresenterInPage from '../src/rules/no-presenter-in-page.js'
 import noProvideInject from '../src/rules/no-provide-inject.js'
@@ -27,12 +28,17 @@ const ruleTester = new RuleTester({
   languageOptions: { ecmaVersion: 2022, sourceType: 'module' }
 })
 
-// Presenters receive data via props: Colada and app data-layer calls give them hidden data access
-// that bypasses the Orchestrator → Operator → props flow.
+// Presenters receive data via props: query primitives and the app's data-layer composables give
+// them hidden data access that bypasses the Orchestrator → Operator → props flow.
 ruleTester.run('no-smart-calls-in-presenter', noSmartCallsInPresenter, {
-  valid: [],
+  valid: [
+    // app composables are unknown to the harness until the app lists them
+    { filename: 'PostTile.vue', code: 'const { data } = useApiQuery(key)' }
+  ],
   invalid: [
-    { filename: 'PostTile.vue', code: 'const { data } = useApiQuery({ key: () => [\'x\'], url: () => \'/api/x\' })', errors: 1 }
+    { filename: 'PostTile.vue', code: 'const { data } = useQuery({ key: [\'x\'], query: load })', errors: 1 },
+    { filename: 'PostTile.vue', code: 'const cart = useCartStore(); const r = useRouter()', errors: 2 },
+    { filename: 'PostTile.vue', code: 'const { data } = useApiQuery(key)', options: [{ dataComposables: ['useApiQuery'] }], errors: 1 }
   ]
 })
 
@@ -57,23 +63,41 @@ const sfc = (template: string, script = '') => `<script setup lang="ts">\n${scri
 vueTester.run('no-presenter-in-page', noPresenterInPage, {
   valid: [
     // Pages assemble Orchestrators/Operators; NuxtUI atoms and Nuxt built-ins are treated like HTML.
-    { filename: 'app/pages/x.vue', code: sfc('<div><OrcSchoolList /><OpFilters /><UButton label="a" /><NuxtLinkLocale to="/" /></div>') }
+    { filename: 'app/pages/x.vue', code: sfc('<div><OrcProductList /><OpFilters /><UButton label="a" /><NuxtLinkLocale to="/" /></div>') },
+    // Nuxt names: lazy prefix, directory prefix (components/shop/OrcCart.vue), kebab-case tags
+    { filename: 'app/pages/x.vue', code: sfc('<div><LazyOrcProductList /><ShopOrcCart /><orc-product-list /><shop-op-filters /></div>') }
   ],
   invalid: [
-    { filename: 'app/pages/x.vue', code: sfc('<div><ComingSoon /></div>'), errors: 1 }
+    { filename: 'app/pages/x.vue', code: sfc('<div><ComingSoon /></div>'), errors: 1 },
+    // `Op` inside a word is not a layer prefix
+    { filename: 'app/pages/x.vue', code: sfc('<div><ShopItem /><DropdownOptions /></div>'), errors: 2 }
   ]
 })
 
+// The harness ships no palette: the app lists the palettes it allows.
+const palettes = [{ palettes: ['zinc', 'blue', 'brand'] }]
 vueTester.run('no-off-palette-color-class', noOffPaletteColorClass, {
   valid: [
-    { filename: 'app/components/X.vue', code: sfc('<div class="text-zinc-500 bg-accent-pink-100" />') },
-    // blue is a design-system palette (main.css defines --color-blue-*), not a Tailwind default here
-    { filename: 'app/components/X.vue', code: sfc('<div class="bg-blue-500" />') }
+    // no palette configured: nothing to enforce
+    { filename: 'app/components/X.vue', code: sfc('<div class="text-gray-500" />') },
+    { filename: 'app/components/X.vue', code: sfc('<div class="text-zinc-500 hover:bg-blue-500/50 bg-brand-100" />'), options: palettes },
+    // custom palettes and non-color utilities never match a built-in palette
+    { filename: 'app/components/X.vue', code: sfc('<div class="bg-accent-pink-100 text-sm rounded-lg" />'), options: palettes }
   ],
-  // Tailwind defaults bypass the design-system palette (use zinc, not neutral/gray).
   invalid: [
-    { filename: 'app/components/X.vue', code: sfc('<div class="text-neutral-500" />'), errors: 1 },
-    { filename: 'app/components/X.vue', code: sfc('<div class="text-sky-500" />'), errors: 1 }
+    { filename: 'app/components/X.vue', code: sfc('<div class="text-neutral-500" />'), options: palettes, errors: 1 },
+    { filename: 'app/components/X.vue', code: sfc('<div class="dark:hover:bg-sky-500 !border-t-gray-200" />'), options: palettes, errors: 2 }
+  ]
+})
+
+vueTester.run('no-nested-border-box', noNestedBorderBox, {
+  valid: [
+    { filename: 'app/components/X.vue', code: sfc('<div class="border rounded-lg"><div class="border-b" /></div>') },
+    { filename: 'app/components/X.vue', code: sfc('<UCard><div class="border rounded" /></UCard>'), options: [{ surfaceComponents: ['AppPanel'] }] }
+  ],
+  invalid: [
+    { filename: 'app/components/X.vue', code: sfc('<UCard><div class="border rounded" /></UCard>'), errors: 1 },
+    { filename: 'app/components/X.vue', code: sfc('<AppPanel><div class="border rounded" /></AppPanel>'), options: [{ surfaceComponents: ['AppPanel'] }], errors: 1 }
   ]
 })
 
@@ -132,13 +156,16 @@ ruleTester.run('no-provide-inject', noProvideInject, {
 ruleTester.run('no-auth-gate-outside-middleware', noAuthGateOutsideMiddleware, {
   valid: [
     // reading the user for display is fine
-    { code: 'const user = useSupabaseUser(); const email = computed(() => user.value?.email)' },
+    { code: 'const { user } = useUserSession(); const email = computed(() => user.value?.email)' },
     // redirects unrelated to auth are fine
-    { code: 'if (saved) await navigateTo(next)' }
+    { code: 'if (saved) await navigateTo(next)' },
+    // composables outside the configured list are not auth state
+    { code: 'const session = useUserSession()\nif (!session.loggedIn.value) await navigateTo(login)', options: [{ composables: ['useMyAuth'] }] }
   ],
   invalid: [
-    { code: 'const user = useSupabaseUser()\nif (!user.value) await navigateTo(login)', errors: 1 },
-    { code: 'watch(useSupabaseSession(), s => { if (!useSupabaseSession().value) navigateTo(home) })', errors: 1 }
+    { code: 'const session = useUserSession()\nif (!session.loggedIn.value) await navigateTo(login)', errors: 1 },
+    { code: 'watch(useSupabaseSession(), s => { if (!useSupabaseSession().value) navigateTo(home) })', errors: 1 },
+    { code: 'const me = useMyAuth()\nif (!me.value) await navigateTo(login)', options: [{ composables: ['useMyAuth'] }], errors: 1 }
   ]
 })
 

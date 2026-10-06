@@ -9,7 +9,7 @@
  *   AI models frequently "reuse" a formatting or validation helper that happens
  *   to live inside a Vue component, importing it directly from server/ code.
  *   This silently couples the server bundle to the Vue runtime, bloats the
- *   worker bundle, and breaks SSR isolation. The fix is always to extract the
+ *   server bundle, and breaks SSR isolation. The fix is always to extract the
  *   shared logic into server/utils/ or a plain composable that works isomorphically.
  *
  * Targets: server/**\/*.ts
@@ -41,13 +41,12 @@ export default {
     schema: [],
     messages: {
       serverUiImport: [
-        '❌ Import UI interdit dans server/ : "{{source}}"',
-        '💡 Le code serveur est de la logique métier pure — il ne connaît pas Vue.',
-        '   Importer un composant couple le bundle Workers au runtime Vue et',
-        '   peut provoquer des erreurs SSR difficiles à diagnostiquer.',
-        '🛠 Extrayez la logique partagée dans server/utils/ ou un composable',
-        '   isomorphique (pas de ref(), pas de onMounted()) que les deux côtés',
-        '   peuvent importer indépendamment.'
+        '❌ UI import in server/: "{{source}}"',
+        '💡 Server code is pure business logic — it doesn\'t know about Vue.',
+        '   Importing a component couples the server bundle to the Vue runtime and',
+        '   can cause SSR errors that are hard to diagnose.',
+        '🛠 Extract the shared logic into server/utils/ or shared/ (no ref(), no',
+        '   onMounted()) so both sides can import it independently.'
       ].join('\n')
     }
   },

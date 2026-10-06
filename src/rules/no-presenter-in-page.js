@@ -8,6 +8,7 @@
  *
  * Enabled by harness() in @edumapper/nuxt-harness/eslint.
  */
+import { docsUrl } from './docs.js'
 
 // Native HTML/SVG elements that should always be allowed
 const NATIVE_ELEMENTS = new Set([
@@ -26,22 +27,25 @@ const VUE_NUXT_BUILTINS = new Set([
   'ClientOnly', 'DevOnly', 'NuxtErrorBoundary'
 ])
 
-/** @param {string} name */
+/** `orc-user-list` / `orcUserList` → `OrcUserList` @param {string} name */
 function toPascalCase(name) {
-  return name.replace(/^./, c => c.toUpperCase())
+  return name.replace(/(?:^|[-_])(\w)/g, (_, c) => c.toUpperCase())
 }
+
+// Nuxt prefixes nested components with their directory (components/users/OrcList.vue →
+// <UsersOrcList>) and lazy ones with `Lazy`, so the layer prefix can follow a PascalCase segment.
+const SMART_COMPONENT = /(?:^|[a-z0-9])(?:Orc|Op)[A-Z]/
 
 /** @param {string} name */
 function isAllowedInPage(name) {
-  const pascal = toPascalCase(name)
+  const pascal = toPascalCase(name).replace(/^Lazy(?=[A-Z])/, '')
   if (NATIVE_ELEMENTS.has(name)) return true
   if (VUE_NUXT_BUILTINS.has(name) || VUE_NUXT_BUILTINS.has(pascal)) return true
   if (/^Nuxt[A-Z]/.test(pascal)) return true // NuxtLinkLocale, NuxtTime, NuxtImg…
-  // NuxtUI is the atom layer — treated like native HTML elements (see skills/nuxt-harness/SKILL.md)
+  // Nuxt UI is the atom layer — treated like native HTML elements (see skills/nuxt-harness/SKILL.md)
   if (/^U[A-Z]/.test(pascal)) return true
-  if (pascal.startsWith('Orc')) return true // Orchestrators — allowed
-  if (pascal.startsWith('Op')) return true // Operators — allowed
-  return false
+  // Orchestrators and Operators — allowed
+  return SMART_COMPONENT.test(pascal)
 }
 
 export default {
@@ -54,11 +58,12 @@ export default {
     schema: [],
     messages: {
       presenterInPage: [
-        '❌ <{{name}}> — Presenter interdit dans une Page',
-        '💡 Les Pages sont des assembleurs : elles composent des Orchestrators (Orc*) et des Operators (Op*).',
-        '   Un Presenter utilisé directement dans la Page n\'a aucun composant smart pour gérer son contrat de données.',
-        '🛠 Créez un Op{{name}}.vue qui câble ce Presenter, puis utilisez-le dans la Page.',
-        '   Si ce composant doit aussi faire du fetch, créez un Orc{{name}}.vue.'
+        '❌ <{{name}}> — Presenter rendered directly in a Page',
+        '💡 Pages are assemblers: they compose Orchestrators (Orc*) and Operators (Op*).',
+        '   A Presenter used directly in a Page has no smart component to own its data contract.',
+        '🛠 Create an Op{{name}}.vue that wires this Presenter, and use it in the Page.',
+        '   If the component also needs to fetch data, create an Orc{{name}}.vue.',
+        '📖 ' + docsUrl('no-presenter-in-page')
       ].join('\n')
     }
   },
