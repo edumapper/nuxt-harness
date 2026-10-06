@@ -37,6 +37,7 @@ Keep the config file free of runtime imports from the harness: `fast` can run th
 | `i18n` | `true` when `@nuxtjs/i18n` is a dependency | Bans `navigateTo('/…')` string paths (use `localePath`). The i18n key check runs whenever a locale directory exists. |
 | `authComposables` | `['useUserSession', 'useAuth', 'useSupabaseUser', 'useSupabaseSession']` | Composables whose value gates access. Checking one and redirecting is only allowed in middleware. |
 | `dataComposables` | `[]` | Your own data-layer composables (`useApiQuery`, …). Presenters may not call them, like `useFetch`. |
+| `bodyReaders` | `[]` | Your own request-body readers (e.g. a size-capped `readJsonBody`). Their result must be `.parse()`d, like `readBody`. |
 | `allowServerImportsInApp` | `[]` | `~~/server/…` globs that `app/` may import, e.g. `['~~/server/utils/validators/**']`. Prefer moving such code to `shared/`. |
 | `designSystem` | `false` | Opt-in design-system rules. See below. |
 

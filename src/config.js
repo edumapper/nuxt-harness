@@ -24,6 +24,7 @@ import { pathToFileURL } from 'node:url'
  * @property {boolean} [i18n] Enforce localized navigation and check `t('…')` keys. Default: on when `@nuxtjs/i18n` is a dependency.
  * @property {string[]} [authComposables] Composables whose value gates access; checking them + redirecting is only allowed in middleware.
  * @property {string[]} [dataComposables] The app's own data-layer composables, treated like `useFetch` in Presenters.
+ * @property {string[]} [bodyReaders] The app's own request-body readers (e.g. a size-capped `readJsonBody`), checked like `readBody`.
  * @property {string[]} [allowServerImportsInApp] `~~/server/…` globs that `app/` may import (e.g. shared validators).
  * @property {false | DesignSystemOptions} [designSystem] Opt-in design-system rules. Default `false`.
  */
@@ -93,6 +94,7 @@ export function resolveOptions(options = {}) {
     i18n: options.i18n ?? ('@nuxtjs/i18n' in deps || existsSync(join(root, 'i18n', 'locales'))),
     authComposables: options.authComposables ?? DEFAULT_AUTH_COMPOSABLES,
     dataComposables: options.dataComposables ?? [],
+    bodyReaders: options.bodyReaders ?? [],
     allowServerImportsInApp: options.allowServerImportsInApp ?? [],
     designSystem: ds
       ? {

@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.1]
+
+### Added
+
+- `bodyReaders` option: the app's own request-body readers get the unvalidated-body check.
+
 ## [0.5.0]
 
 ### Breaking

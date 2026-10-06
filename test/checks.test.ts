@@ -35,6 +35,14 @@ describe('unvalidatedReadBody', () => {
     expect(findings).toHaveLength(1)
   })
 
+  it('checks the app\'s own body readers', () => {
+    const ctx = { ...fixture({ 'server/api/x.post.ts': 'const body = await readJsonBody<Input>(event)\nreturn save(body)\n' }), options: { bodyReaders: ['readJsonBody'] } }
+    expect(unvalidatedReadBody.run(ctx)).toHaveLength(1)
+    expect(unvalidatedReadBody.run({ ...ctx, options: {} })).toEqual([])
+    const definition = { ...fixture({ 'server/utils/read-json-body.ts': 'export async function readJsonBody<T>(event: H3Event): Promise<T> {\n' }), options: { bodyReaders: ['readJsonBody'] } }
+    expect(unvalidatedReadBody.run(definition)).toEqual([])
+  })
+
   it('accepts readValidatedBody and checks server routes inside layers', () => {
     expect(unvalidatedReadBody.run(fixture({ 'server/api/x.post.ts': 'const body = await readValidatedBody(event, schema.parse)\n' }))).toEqual([])
     expect(unvalidatedReadBody.run(fixture({ 'layers/base/server/api/x.post.ts': 'const body = await readBody(event)\n' }))).toHaveLength(1)

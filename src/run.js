@@ -83,7 +83,7 @@ async function timed(name, fn) {
 
 /** @param {string} root @param {string[]} files @param {import('./config.js').HarnessOptions} options */
 function fastChecks(root, files, options) {
-  const ctx = { root, files }
+  const ctx = { root, files, options }
   return Promise.all([
     ...STATIC_CHECKS.map(c => timed(c.name, () => c.run(ctx))),
     timed('ESLint (harness rules)', () => lint(root, files, options))
