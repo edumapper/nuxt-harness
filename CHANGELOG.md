@@ -6,6 +6,20 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.6.0]
+
+### Added
+
+- Baseline for the static checks (#5): `nuxt-harness full --update-baseline` records each static
+  check's errors per file in `nuxt-harness-baseline.json` (next to CRAP), and `fast`, `full` and the
+  hooks apply it with the same ratchet. Existing CRAP-only baselines keep working.
+
+### Fixed
+
+- Static checks no longer report text inside comments (#4). Import hygiene, console, secrets,
+  unvalidated `readBody` and i18n keys skip `//`, `/* */`, JSDoc and (in `.vue` templates) HTML
+  comments, while strings and regex literals stay code. A commented-out `.parse()` no longer counts as validating a body.
+
 ## [0.5.2]
 
 ### Fixed

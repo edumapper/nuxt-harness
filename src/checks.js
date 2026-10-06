@@ -15,12 +15,93 @@ import { join } from 'node:path'
  */
 
 /** @param {CheckContext} ctx @param {string} file */
-function lines(ctx, file) {
+function read(ctx, file) {
   try {
-    return readFileSync(join(ctx.root, file), 'utf8').split('\n')
+    return readFileSync(join(ctx.root, file), 'utf8')
   } catch {
-    return [] // deleted since the file list was built
+    return '' // deleted since the file list was built
   }
+}
+
+/** Raw source lines, comments included. @param {CheckContext} ctx @param {string} file */
+const lines = (ctx, file) => read(ctx, file).split('\n')
+
+// A `/` after one of these (or after a keyword below) starts a regex literal, not a division.
+const BEFORE_REGEX = new Set([...'(,=:[!&|?{};+-*%<>~^'])
+const KEYWORD_BEFORE_REGEX = /\b(?:return|typeof|case|void|in|of|delete|throw|new|yield|await)$/
+
+/**
+ * Blanks JS comments (`//`, `/* *\/`) with spaces, keeping newlines so line numbers hold.
+ * Strings, template literals and regex literals are code: the `//` in 'https://…' or in
+ * /^https?:\/\//.test(url) is not a comment.
+ * @param {string} src
+ */
+function blankJsComments(src) {
+  let out = ''
+  /** @type {'code' | 'line' | 'block' | 'regex' | "'" | '"' | '`'} */
+  let state = 'code'
+  let inClass = false // inside a regex character class: `/` doesn't end the regex there
+  let last = '' // last non-blank character of code, to tell a regex from a division
+  for (let i = 0; i < src.length; i++) {
+    const c = /** @type {string} */ (src[i]), next = src[i + 1]
+    if (state === 'code') {
+      if (c === '/' && next === '/') state = 'line'
+      else if (c === '/' && next === '*') state = 'block'
+      else if (c === '\'' || c === '"' || c === '`') state = c
+      else if (c === '/' && (last === '' || BEFORE_REGEX.has(last) || KEYWORD_BEFORE_REGEX.test(out.slice(-16).trimEnd()))) state = 'regex'
+      if (state === 'code' && c.trim()) last = c
+    } else if (state === 'line') {
+      if (c === '\n') state = 'code'
+    } else if (state === 'block') {
+      if (c === '*' && next === '/') {
+        out += '  '
+        i++
+        state = 'code'
+        continue
+      }
+    } else if (c === '\\') {
+      out += c + (next ?? '') // escaped character inside a string or regex
+      i++
+      continue
+    } else if (state === 'regex') {
+      if (c === '[') inClass = true
+      else if (c === ']') inClass = false
+      else if ((c === '/' && !inClass) || c === '\n') {
+        state = 'code'
+        inClass = false
+        last = c
+      }
+    } else if (c === state || (c === '\n' && state !== '`')) {
+      state = 'code' // closing quote (an unterminated '/" string ends at the line)
+      last = c
+      out += c
+      continue
+    }
+    const inComment = state === 'line' || state === 'block'
+    out += inComment && c !== '\n' ? ' ' : c
+  }
+  return out
+}
+
+/** Blanks `<!-- … -->` comments, keeping newlines. @param {string} src */
+const blankHtmlComments = src => src.replace(/<!--[\s\S]*?-->/g, m => m.replace(/[^\n]/g, ' '))
+
+/**
+ * Source lines with comments blanked: what the code checks scan. In a `.vue` file JS comments
+ * are only recognized inside `<script>` blocks — template text (`see https://…`) is not a comment.
+ * @param {CheckContext} ctx @param {string} file
+ */
+function codeLines(ctx, file) {
+  const src = read(ctx, file)
+  if (!file.endsWith('.vue')) return blankJsComments(src).split('\n')
+  const SCRIPT = /(<script\b[^>]*>)([\s\S]*?)(<\/script>)/g
+  let out = '', last = 0
+  for (const m of src.matchAll(SCRIPT)) {
+    const start = /** @type {number} */ (m.index)
+    out += blankHtmlComments(src.slice(last, start)) + m[1] + blankJsComments(/** @type {string} */ (m[2])) + m[3]
+    last = start + m[0].length
+  }
+  return (out + blankHtmlComments(src.slice(last))).split('\n')
 }
 
 const isTest = (/** @type {string} */ f) => /\.(test|spec)\.[jt]s$/.test(f)
@@ -41,7 +122,7 @@ const BARREL_IMPORT = /from ['"]\.\.?\/?index['"]/
 
 export const importHygiene = check('Import hygiene', function* (ctx) {
   for (const file of ctx.files) {
-    for (const [i, line] of lines(ctx, file).entries()) {
+    for (const [i, line] of codeLines(ctx, file).entries()) {
       if (DEEP_RELATIVE.test(line)) yield { file, line: i + 1, severity: 'error', message: `deep relative import — use an alias (~/, ~~/, #shared): ${line.trim()}` }
       if (BARREL_IMPORT.test(line)) yield { file, line: i + 1, severity: 'error', message: `barrel import — import the module directly: ${line.trim()}` }
     }
@@ -85,8 +166,8 @@ const CONSOLE = /console\.(log|debug|info)\s*\(/
 export const consoleHygiene = check('Console hygiene', function* (ctx) {
   for (const file of ctx.files) {
     if (isTest(file)) continue
-    for (const [i, line] of lines(ctx, file).entries()) {
-      if (CONSOLE.test(line) && !line.trim().startsWith('//')) {
+    for (const [i, line] of codeLines(ctx, file).entries()) {
+      if (CONSOLE.test(line)) {
         yield { file, line: i + 1, severity: 'error', message: `${line.trim()} — remove it, or log through the app's logger (console.warn/error stay allowed)` }
       }
     }
@@ -106,9 +187,8 @@ const SECRET_PATTERNS = [
 
 export const secretScan = check('Secret scan', function* (ctx) {
   for (const file of ctx.files) {
-    for (const [i, line] of lines(ctx, file).entries()) {
+    for (const [i, line] of codeLines(ctx, file).entries()) {
       const trimmed = line.trim()
-      if (trimmed.startsWith('//') || trimmed.startsWith('#')) continue
       for (const { pattern, label } of SECRET_PATTERNS) {
         if (pattern.test(line)) yield { file, line: i + 1, severity: 'error', message: `${label}: ${trimmed.slice(0, 60)} — read it from runtimeConfig / an environment variable` }
       }
@@ -132,7 +212,8 @@ export const unvalidatedReadBody = check('Unvalidated readBody', function* (ctx)
   const ASSIGNED = new RegExp(`\\b(?:const|let)\\s+(\\w+)\\s*=\\s*await\\s+(?:${readers})\\s*${call}`)
   for (const file of ctx.files) {
     if (!/(?:^|\/)server\//.test(file) || !file.endsWith('.ts')) continue
-    const src = lines(ctx, file)
+    // comments are blanked both ways: a commented-out call is not a read, a commented-out .parse() is not validation
+    const src = codeLines(ctx, file)
     for (const [i, line] of src.entries()) {
       const call = READ_BODY.exec(line)
       if (!call || PARSED.test(line)) continue
@@ -168,7 +249,7 @@ export const i18nKeys = check('i18n keys', function* (ctx) {
     .map(f => ({ name: f, messages: JSON.parse(readFileSync(join(dir, f), 'utf8')) }))
   for (const file of ctx.files) {
     if (SERVER_SIDE.test(file) || isTest(file)) continue
-    for (const [i, line] of lines(ctx, file).entries()) {
+    for (const [i, line] of codeLines(ctx, file).entries()) {
       for (const match of line.matchAll(T_CALL)) {
         const key = /** @type {string} */ (match[1])
         const missing = locales.filter(l => !hasKey(l.messages, key)).map(l => l.name)

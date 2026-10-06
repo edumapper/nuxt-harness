@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -87,5 +87,31 @@ describe('fast — works on any Nuxt 4 app out of the box', () => {
     const r = spawnSync(process.execPath, [BIN, 'fast', '--all'], { cwd, encoding: 'utf8' })
     expect(r.status).toBe(1)
     expect(r.stdout).toContain('no-off-palette-color-class')
+  })
+})
+
+describe('baseline — legacy static-check errors are recorded once, then can only go down', () => {
+  const gate = (cwd: string, ...args: string[]) => spawnSync(process.execPath, [BIN, ...args, '--json'], { cwd, encoding: 'utf8' })
+  const consoleErrors = (r: ReturnType<typeof gate>) =>
+    (JSON.parse(r.stdout).checks as { name: string, findings: { line: number }[] }[]).find(c => c.name === 'Console hygiene')?.findings.map(f => f.line)
+
+  it('full --update-baseline records them; fast passes until a file gets one more', () => {
+    const cwd = repo({ 'package.json': '{}', 'app/utils/legacy.ts': 'console.log(1)\nconsole.log(2)\nexport {}\n' })
+    gate(cwd, 'full', '--update-baseline')
+    const baseline = JSON.parse(readFileSync(join(cwd, 'nuxt-harness-baseline.json'), 'utf8'))
+    expect(baseline.checks['Console hygiene']).toEqual({ 'app/utils/legacy.ts': 2 })
+
+    expect(gate(cwd, 'fast', '--all').status).toBe(0)
+
+    // one more in the same file: every error in it reports again
+    writeFileSync(join(cwd, 'app/utils/legacy.ts'), 'console.log(1)\nconsole.log(2)\nconsole.log(3)\nexport {}\n')
+    const r = gate(cwd, 'fast', '--all')
+    expect(r.status).toBe(1)
+    expect(consoleErrors(r)).toEqual([1, 2, 3])
+  })
+
+  it('reads a baseline written before static checks were recorded (CRAP only)', () => {
+    const cwd = repo({ 'nuxt-harness-baseline.json': '{ "crap": {} }', 'app/utils/x.ts': 'console.log(1)\n' })
+    expect(consoleErrors(gate(cwd, 'fast', '--all'))).toEqual([1])
   })
 })

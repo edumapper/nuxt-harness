@@ -65,7 +65,7 @@ Legacy violations live in two ratchet files. A file passes while its count for a
 below the recorded count; one more violation and all of them report. These files only shrink:
 
 - `eslint-suppressions.json`: ESLint bulk suppressions. Prune with `eslint . --prune-suppressions`.
-- `nuxt-harness-baseline.json`: CRAP hits per file. Rewrite with `nuxt-harness full --update-baseline`
+- `nuxt-harness-baseline.json`: static-check errors and CRAP hits per file. Rewrite with `nuxt-harness full --update-baseline`
   after fixing some, never to absorb new ones.
 
 ### Principle → deterministic check

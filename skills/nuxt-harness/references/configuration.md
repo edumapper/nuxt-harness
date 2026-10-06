@@ -76,8 +76,9 @@ config file, or run the installed binary instead (`node_modules/.bin/nuxt-harnes
 
 ## Turning a rule off
 
-Prefer fixing the code. For legacy code, record existing violations with
-`eslint . --suppress-all`: the gate then fails only on new ones. To drop a rule entirely, add a
+Prefer fixing the code. For legacy code, record existing violations once —
+`eslint . --suppress-all` for ESLint rules, `nuxt-harness full --update-baseline` for the static
+checks and CRAP — and the gate then fails only on new ones. To drop a rule entirely, add a
 block after `harness()` in `eslint.config.mjs`. `nuxt-harness fast` uses its own config, so a
 rule turned off only in `eslint.config.mjs` still reports there: suppressions are the supported
 escape hatch for both.
