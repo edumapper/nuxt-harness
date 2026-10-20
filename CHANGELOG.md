@@ -6,6 +6,43 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.7.0]
+
+### Added
+
+- SSR-determinism rules, for bugs that `nuxt typecheck`, SSR HTML and `curl` all miss:
+  - `arch/no-browser-api-in-setup`: a top-level read of `window` / `document` / storage /
+    `navigator` (scope-aware: `hit.document` and shadowing locals are not the global).
+  - `arch/no-locale-format-in-render`: locale formatting in the render path without a locale, or
+    a date without a `timeZone`.
+  - `arch/no-nondeterministic-key`: a payload key built from the clock or a random value.
+  - `arch/no-reserved-item-value`: a `value: ''` select item, which Reka-based selects throw on
+    while hydrating. On when `@nuxt/ui`, `reka-ui`, `radix-vue` or `shadcn-nuxt` is installed.
+  - `arch/no-module-mutable-state`: module-scope reactive state or a `let` reassigned outside an
+    `import.meta.client` branch, i.e. state shared by every request (`app/`, `modules/`,
+    `server/`, `shared/`).
+  - `arch/async-data-needs-key` (warn): a keyless `useAsyncData(handler)` that reads props or the
+    route, so every instance of the component shares one payload entry.
+  - `arch/timer-needs-scope-dispose` (warn): a timer or listener with no scope-aware cleanup.
+- Options: `clientOnly` (globs of files that never run on the server, e.g. `ssr: false` routes),
+  `clientSingletons` (modules that deliberately keep one browser-side instance) and
+  `selectComponents`. Test files and `*.client.*` files are exempt from the SSR rules, and
+  `plugins/` from the timer rule.
+
+### Changed
+
+- Selecting no file is no longer a pass: `--all` or explicit file arguments that select nothing,
+  or a run outside a git repository, fail with `harness/no-files` (`--allow-empty` opts in). In
+  the default changed-files mode inside a repository, "nothing changed" still passes, so the Stop
+  hook and `check:fast` on a clean branch are unaffected. Outside a repository, `--all` now walks
+  the file system instead of selecting nothing.
+
+### Upgrading
+
+The new rules report existing code. Fix real findings; list `ssr: false` pages in `clientOnly`
+and deliberate browser-only singletons in `clientSingletons` (with the reason next to each
+entry); record the rest with `npx eslint . --suppress-all`.
+
 ## [0.6.0]
 
 ### Added
