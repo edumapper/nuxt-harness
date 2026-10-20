@@ -52,7 +52,7 @@ with an invalid case.
 | `vue/no-setup-props-reactivity-loss` | destructuring `props` at setup root freezes the value |
 | `arch/max-boolean-props` <a id="max-boolean-props"></a> | 3+ boolean props encode 2^N states, most of them illegal. Use one discriminated union prop. |
 | `@typescript-eslint/switch-exhaustiveness-check` (type-aware) | adding a union member must break every switch that forgot it |
-| `@typescript-eslint/no-unnecessary-condition` (type-aware) | a condition the types prove constant is dead code or a lying type |
+| `@typescript-eslint/no-unnecessary-condition` (type-aware) | a condition the types prove constant is dead code or a lying type. A literal `while (true)` / `for (;;)` stays allowed (`allowConstantLoopConditions: 'only-allowed-literals'`). |
 | `@typescript-eslint/no-unnecessary-type-assertion` (type-aware) | a cast the types already satisfy hides the real type |
 | `@typescript-eslint/no-unsafe-return` (type-aware) | returning `any` leaks it into every caller |
 
@@ -79,6 +79,7 @@ Principle: use early returns for states that really happen. Don't check states t
 | `no-empty` (incl. catch) | `catch {}` swallows errors |
 | `complexity: 20` | the C in CRAP. Above it, split the function. |
 | `max-params: 4` | the cheapest SRP smell to detect (off in tests) |
+| `no-useless-assignment` | a value that is overwritten or never read before it is replaced: dead code, and often a lost result (`let x = null; try { x = … }`) |
 | `arch/no-figma-asset-url` | expiring Figma MCP asset URLs (`figma.com/api/mcp/asset/…`, `localhost:3845/assets/…`) ship as broken images |
 
 ## SSR determinism

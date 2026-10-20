@@ -52,7 +52,7 @@ The file prefix decides what ESLint allows. No discipline required — the gate 
 | Command | When | What | Needs |
 |---|---|---|---|
 | `nuxt-harness fast` | after every edit — hooks run it on the edited file, and on every changed file before a turn ends | static checks + harness ESLint rules on changed files (~1 s) | nothing: no app `node_modules`, no `.nuxt/` |
-| `nuxt-harness full` | before declaring done, and in CI | fast checks on every file + `nuxt typecheck`, type-aware ESLint, knip, cspell, jscpd, vitest + CRAP (the tools the app has configured) | the app installed |
+| `nuxt-harness full` | before declaring done, and in CI | fast checks on every file + `nuxt typecheck` (and `vue-tsc` on `tools/` / `scripts/`), type-aware ESLint, knip, cspell, jscpd, vitest + CRAP (the tools the app has configured) | the app installed |
 
 Both print `❌ what → 💡 why → 🛠 fix → 📖 doc` findings and write `.harness/report.json`
 (`--json` prints it). The exit code is non-zero on any error.

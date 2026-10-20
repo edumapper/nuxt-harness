@@ -130,6 +130,9 @@ export function harness(options) {
         'complexity': ['error', 20],
         // Long positional parameter lists are the cheapest SRP smell to detect.
         'max-params': ['error', 4],
+        // A value written and then overwritten or never read is dead code, often a lost result
+        // (`let x = null; try { x = … }` where the first value can never be read).
+        'no-useless-assignment': 'error',
         '@typescript-eslint/no-explicit-any': 'error',
         'arch/no-figma-asset-url': 'error',
         // ── Guards: early return for real states, named compound conditions ──
@@ -303,18 +306,19 @@ function designSystem(o, files) {
  * @returns {import('eslint').Linter.Config[]}
  */
 export function typeAware(tsconfigRootDir = process.cwd(), options = {}) {
-  const { srcDir } = resolveOptions({ root: tsconfigRootDir, ...options })
+  const { srcDir, typecheckProjects } = resolveOptions({ root: tsconfigRootDir, ...options })
   return [{
     name: 'nuxt-harness/type-aware',
-    files: [...appGlobs(srcDir, '**/*.{vue,ts}'), ...rootGlobs('server', '**/*.ts'), ...rootGlobs('shared', '**/*.ts')],
+    files: [...appGlobs(srcDir, '**/*.{vue,ts}'), ...rootGlobs('server', '**/*.ts'), ...rootGlobs('shared', '**/*.ts'), ...typecheckProjects.map(dir => `${dir}/**/*.ts`)],
     // Nuxt's root tsconfig is solution-style (references into .nuxt/); the project
     // service resolves each file to the referenced project that owns it.
     languageOptions: { parserOptions: { projectService: true, tsconfigRootDir } },
     rules: {
       // Adding a union member must break every switch that forgot it.
       '@typescript-eslint/switch-exhaustiveness-check': ['error', { considerDefaultExhaustiveForUnions: true }],
-      // A condition the types prove constant is either dead code or a lying type.
-      '@typescript-eslint/no-unnecessary-condition': 'error',
+      // A condition the types prove constant is either dead code or a lying type. An intentional
+      // `while (true)` / `for (;;)` stays allowed; `while (x !== null)` on a non-null x does not.
+      '@typescript-eslint/no-unnecessary-condition': ['error', { allowConstantLoopConditions: 'only-allowed-literals' }],
       '@typescript-eslint/no-unsafe-return': 'error',
       // A cast the types already satisfy hides the real type from the next reader.
       '@typescript-eslint/no-unnecessary-type-assertion': 'error'
