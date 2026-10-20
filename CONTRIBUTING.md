@@ -12,7 +12,7 @@ bun install        # npm install works too
 bun run test
 ```
 
-The source is plain ESM JavaScript with JSDoc types (`// @ts-check`), Node ≥ 22. There is no
+The source is plain ESM JavaScript with JSDoc types (`// @ts-check`), Node ≥ 24 (the exact CI version is in `.nvmrc`). There is no
 build step: what's in `src/` is what ships.
 
 ESLint, the Vue and TypeScript parsers and plugins are **peer dependencies**: the app provides

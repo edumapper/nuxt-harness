@@ -64,7 +64,7 @@ npx eslint . --suppress-all                  # → eslint-suppressions.json (rea
 npx nuxt-harness full --update-baseline      # → nuxt-harness-baseline.json (static checks + CRAP)
 ```
 
-Requirements: Node ≥ 22, a git repository, Nuxt 4 (the `app/` layout, or `srcDir: '.'`).
+Requirements: Node ≥ 24, a git repository, Nuxt 4 (the `app/` layout, or `srcDir: '.'`).
 Nuxt layers under `layers/` are covered too.
 
 The lint toolchain is a peer dependency, so the harness uses your project's versions and never
