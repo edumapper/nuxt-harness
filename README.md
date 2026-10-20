@@ -12,6 +12,8 @@ A deterministic quality gate for **Nuxt 4** apps, built for teams that ship code
 - **SSR-determinism rules**: the bugs typecheck and `curl` can't see — a reserved `''` select
   value that throws while hydrating, request keys the client can't reproduce, cross-request
   module state, locale formatting and browser APIs in the render path.
+- **Validated request input**: server code reads the body, query and route params only through a
+  schema (`readValidatedBody`, `getValidatedQuery`, `getValidatedRouterParams`).
 - **A gate the agent can't switch off**: `@ts-ignore` and `eslint-disable` of harness rules fail the gate.
 - **Fast mode for agents**: lints changed files in ~1 s, without the app's `node_modules` or `.nuxt/`.
 - **Claude Code hooks**: feedback after every edit, and a turn can't end while changed files fail.
@@ -20,7 +22,7 @@ A deterministic quality gate for **Nuxt 4** apps, built for teams that ship code
 Every finding explains itself: `❌ what → 💡 why → 🛠 fix → 📖 doc`.
 
 ```text
-  @edumapper/nuxt-harness 0.9.0 — fast gate, 3 files
+  @edumapper/nuxt-harness 0.10.0 — fast gate, 3 files
 
   → ESLint (harness rules).......... FAIL 412ms
     ✗ app/components/ProductCard.vue:4 [arch/no-smart-calls] ❌ useRouter() — navigation in a Presenter
@@ -34,13 +36,13 @@ Every finding explains itself: `❌ what → 💡 why → 🛠 fix → 📖 doc`
 Try it on any Nuxt 4 repository, with nothing installed:
 
 ```bash
-npx --package github:edumapper/nuxt-harness#v0.9.0 nuxt-harness fast --all
+npx --package github:edumapper/nuxt-harness#v0.10.0 nuxt-harness fast --all
 ```
 
 Then adopt it:
 
 ```bash
-npm i -D github:edumapper/nuxt-harness#v0.9.0   # or pnpm / yarn / bun add -d
+npm i -D github:edumapper/nuxt-harness#v0.10.0   # or pnpm / yarn / bun add -d
 ```
 
 ```js
@@ -83,7 +85,7 @@ nuxt-harness stop                              # Claude Code Stop: the turn can'
 
 | Check | fast | full |
 |---|---|---|
-| Import hygiene, escape hatches, console, secrets, unvalidated `readBody` / `getQuery`, i18n keys, TODO (warn) | ✓ | ✓ |
+| Import hygiene, escape hatches, console, secrets, i18n keys, TODO (warn) | ✓ | ✓ |
 | Harness ESLint rules (layers, locality, guards, Vue contracts, complexity, opt-in design system) | ✓ | ✓ |
 | `nuxt typecheck` (+ `vue-tsc` for `tools/` and `scripts/` when they have a `tsconfig.json`), the app's ESLint config (type-aware), knip, cspell, jscpd, vitest + coverage | | ✓ |
 | CRAP ≤ 30 per `.ts` function | | ✓ |
