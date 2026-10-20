@@ -26,6 +26,7 @@ import { pathToFileURL } from 'node:url'
  * @property {string[]} [dataComposables] The app's own data-layer composables, treated like `useFetch` in Presenters.
  * @property {string[]} [bodyReaders] The app's own request-body readers (e.g. a size-capped `readJsonBody`), checked like `readBody`.
  * @property {string[]} [allowServerImportsInApp] `~~/server/…` globs that `app/` may import (e.g. shared validators).
+ * @property {string[]} [clientSingletons] Root-relative globs of modules that deliberately hold one browser-side instance for the app's lifetime (written only in the browser). Exempt from `no-module-mutable-state` and `timer-needs-scope-dispose`.
  * @property {false | DesignSystemOptions} [designSystem] Opt-in design-system rules. Default `false`.
  */
 
@@ -96,6 +97,7 @@ export function resolveOptions(options = {}) {
     dataComposables: options.dataComposables ?? [],
     bodyReaders: options.bodyReaders ?? [],
     allowServerImportsInApp: options.allowServerImportsInApp ?? [],
+    clientSingletons: options.clientSingletons ?? [],
     designSystem: ds
       ? {
           palettes: ds.palettes,
