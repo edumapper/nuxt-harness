@@ -69,7 +69,7 @@ Nuxt layers under `layers/` are covered too.
 
 The lint toolchain is a peer dependency, so the harness uses your project's versions and never
 installs its own copies: ESLint `^9.24 || ^10`, `eslint-plugin-vue` `^10`, `vue-eslint-parser`
-`^10` and `@typescript-eslint/*` `^8.24`. `@nuxt/eslint` already brings them; otherwise npm,
+`^10.4` and `@typescript-eslint/*` `^8.24`. `@nuxt/eslint` already brings them; otherwise npm,
 pnpm and bun install the missing peers for you (the no-install `npx`/`bunx` mode included).
 
 ## Commands

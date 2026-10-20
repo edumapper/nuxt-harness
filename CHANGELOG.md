@@ -27,8 +27,10 @@ All notable changes to this project are documented here. The format follows
 
 - `@typescript-eslint/no-unnecessary-condition` allows a literal `while (true)` / `for (;;)`
   (`allowConstantLoopConditions: 'only-allowed-literals'`).
-- Peer dependency floor: `@typescript-eslint/*` `^8.24.0` (was `^8.12.0`), the first version with
-  that option.
+- Peer dependency floors: `@typescript-eslint/*` `^8.24.0` (was `^8.12.0`), the first version with
+  that option; `vue-eslint-parser` `^10.4.0` (was `^10.0.0`): earlier versions don't mark
+  `<template>` uses as reads, so `no-useless-assignment` reported every `<script setup>` value only
+  the template reads. `@nuxt/eslint-config` already requires `^10.4.1`.
 
 
 ## [0.7.0]
