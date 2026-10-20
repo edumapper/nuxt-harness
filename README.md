@@ -83,7 +83,7 @@ nuxt-harness stop                              # Claude Code Stop: the turn can'
 
 | Check | fast | full |
 |---|---|---|
-| Import hygiene, escape hatches, console, secrets, unvalidated `readBody`, i18n keys, TODO (warn) | ✓ | ✓ |
+| Import hygiene, escape hatches, console, secrets, unvalidated `readBody` / `getQuery`, i18n keys, TODO (warn) | ✓ | ✓ |
 | Harness ESLint rules (layers, locality, guards, Vue contracts, complexity, opt-in design system) | ✓ | ✓ |
 | `nuxt typecheck` (+ `vue-tsc` for `tools/` and `scripts/` when they have a `tsconfig.json`), the app's ESLint config (type-aware), knip, cspell, jscpd, vitest + coverage | | ✓ |
 | CRAP ≤ 30 per `.ts` function | | ✓ |

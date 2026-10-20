@@ -4,11 +4,13 @@ import { afterAll, describe, it } from 'vitest'
 import vueParser from 'vue-eslint-parser'
 
 import clientOnlyNeedsReason from '../src/rules/client-only-needs-reason.js'
+import linkNeedsLocalePath from '../src/rules/link-needs-locale-path.js'
 import maxBooleanProps from '../src/rules/max-boolean-props.js'
 import maxConditionOperands from '../src/rules/max-condition-operands.js'
 import maxWatchers from '../src/rules/max-watchers.js'
 import noAuthGateOutsideMiddleware from '../src/rules/no-auth-gate-outside-middleware.js'
 import noBareNavigate from '../src/rules/no-bare-navigate.js'
+import noContextAfterAwait from '../src/rules/no-context-after-await.js'
 import noDataCallsInOperator from '../src/rules/no-data-calls-in-operator.js'
 import noHardcodedColor from '../src/rules/no-hardcoded-color.js'
 import noNestedBorderBox from '../src/rules/no-nested-border-box.js'
@@ -198,5 +200,46 @@ vueTester.run('client-only-needs-reason', clientOnlyNeedsReason, {
     { filename: 'X.vue', code: sfc('<div>\n    <!-- ClientOnly: vaul drawer touches document -->\n    <span />\n    <ClientOnly><Drawer /></ClientOnly>\n  </div>'), errors: 1 },
     // a token comment is not an explanation
     { filename: 'X.vue', code: sfc('<div>\n    <!-- client only -->\n    <client-only><Drawer /></client-only>\n  </div>'), errors: 1 }
+  ]
+})
+
+// On the server the Nuxt/Vue context is per request, and an await ends it. Only code that runs
+// during SSR is checked: a composable body, a useAsyncData / callOnce handler, a Colada query.
+ruleTester.run('no-context-after-await', noContextAfterAwait, {
+  valid: [
+    // context read before the first await, kept for later
+    { filename: 'app/composables/useProgram.ts', code: 'export async function useProgram () { const config = useRuntimeConfig(); const data = await load(); return { data, config } }' },
+    // calls inside the awaited expression run before the function suspends
+    { filename: 'app/composables/useLists.ts', code: 'export async function useLists () { const [a, b] = await Promise.all([useFetch(\'/a\'), useFetch(\'/b\')]); return { a, b } }' },
+    // an action a composable returns runs on a user event in the browser, where the context stays set
+    { filename: 'app/composables/useLogout.ts', code: 'export function useLogout () { return async () => { await signOut(); await navigateTo(\'/\') } }' },
+    // runWithContext restores it
+    { filename: 'app/composables/useClient.ts', code: 'export async function useClient () { const nuxtApp = useNuxtApp(); await load(); return nuxtApp.runWithContext(() => useRuntimeConfig()) }' },
+    // Nuxt rewrites the awaits of plugins, middleware and <script setup>
+    { filename: 'app/plugins/init.ts', code: 'export default defineNuxtPlugin(async () => { await load(); useState(\'x\') })' },
+    { filename: 'app/components/Card.vue', code: 'const data = await load(); const route = useRoute()' }
+  ],
+  invalid: [
+    { filename: 'app/composables/useProgram.ts', code: 'export async function useProgram () { const data = await load(); const config = useRuntimeConfig(); return { data, config } }', errors: [{ messageId: 'afterAwait' }] },
+    { filename: 'app/composables/useProgram.ts', code: 'export const useProgram = async () => { await load(); return useI18n() }', errors: 1 },
+    { filename: 'app/composables/useStats.ts', code: 'useAsyncData(\'stats\', async () => { const raw = await $fetch(\'/api\'); return useState(\'s\', () => raw) })', errors: 1 },
+    { filename: 'app/composables/useStats.ts', code: 'const q = useQuery({ key: [\'s\'], query: async () => { await tick(); return useRoute().params.id } })', errors: 1 },
+    // the app's data-layer wrappers need the context too
+    { filename: 'app/composables/useProgram.ts', code: 'export async function useProgram () { await load(); return useApiQuery(\'/p\') }', options: [{ composables: ['useApiQuery'] }], errors: 1 }
+  ]
+})
+
+// A literal path skips the i18n locale prefix; <NuxtLinkLocale> and localePath() do not.
+vueTester.run('link-needs-locale-path', linkNeedsLocalePath, {
+  valid: [
+    { filename: 'app/components/Header.vue', code: sfc('<NuxtLink :to="localePath(\'/\')">Home</NuxtLink>') },
+    { filename: 'app/components/Header.vue', code: sfc('<NuxtLinkLocale to="/about">About</NuxtLinkLocale>') },
+    { filename: 'app/components/Header.vue', code: sfc('<NuxtLink to="https://edumapper.com">Site</NuxtLink>') },
+    { filename: 'app/components/Header.vue', code: sfc('<NuxtLink :to="item.to">x</NuxtLink>') }
+  ],
+  invalid: [
+    { filename: 'app/components/Header.vue', code: sfc('<NuxtLink to="/" class="logo">Home</NuxtLink>'), errors: [{ messageId: 'literalPath' }] },
+    { filename: 'app/components/Header.vue', code: sfc('<NuxtLink :to="\'/about\'">About</NuxtLink>'), errors: 1 },
+    { filename: 'app/components/Header.vue', code: sfc('<nuxt-link :to="`/programs/${id}`">x</nuxt-link>'), errors: 1 }
   ]
 })

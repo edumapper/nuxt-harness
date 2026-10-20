@@ -30,6 +30,8 @@ import noProvideInject from './rules/no-provide-inject.js'
 import noReverseLayerImport from './rules/no-reverse-layer-import.js'
 import noServerUiImport from './rules/no-server-ui-import.js'
 import asyncDataNeedsKey from './rules/async-data-needs-key.js'
+import linkNeedsLocalePath from './rules/link-needs-locale-path.js'
+import noContextAfterAwait from './rules/no-context-after-await.js'
 import noBrowserApiInSetup from './rules/no-browser-api-in-setup.js'
 import noLocaleFormatInRender from './rules/no-locale-format-in-render.js'
 import noModuleMutableState from './rules/no-module-mutable-state.js'
@@ -63,6 +65,8 @@ export const arch = {
     'no-reserved-item-value': noReservedItemValue,
     'no-nondeterministic-key': noNondeterministicKey,
     'async-data-needs-key': asyncDataNeedsKey,
+    'no-context-after-await': noContextAfterAwait,
+    'link-needs-locale-path': linkNeedsLocalePath,
     'no-locale-format-in-render': noLocaleFormatInRender,
     'no-browser-api-in-setup': noBrowserApiInSetup,
     'timer-needs-scope-dispose': timerNeedsScopeDispose,
@@ -174,7 +178,7 @@ export function harness(options) {
           group: ['~~/server/**', ...o.allowServerImportsInApp.map(g => `!${g}`)],
           message: '❌ app/ imports server code. 💡 Server modules pull DB access and secrets into the client bundle. 🛠 Move the schema or type to shared/ and import it from #shared.'
         }]),
-        ...(o.i18n ? { 'no-restricted-syntax': ['error', NAVIGATE_LITERAL, NAVIGATE_TEMPLATE] } : {}),
+        ...(o.i18n ? { 'no-restricted-syntax': ['error', NAVIGATE_LITERAL, NAVIGATE_TEMPLATE], 'arch/link-needs-locale-path': 'error' } : {}),
         'arch/no-bare-navigate': 'error',
         // Untyped, invisible dependencies — props down or a shared composable instead.
         'arch/no-provide-inject': 'error',
@@ -261,6 +265,13 @@ export function harness(options) {
         // The empty string is reserved by Reka-based selects; it throws while hydrating.
         ...(o.selectComponents ? { 'arch/no-reserved-item-value': 'error' } : {})
       }
+    },
+    {
+      // Code that runs during SSR loses the per-request Nuxt/Vue context at its first await.
+      name: 'nuxt-harness/ssr-context',
+      files: appSide,
+      ignores: notOnServer,
+      rules: { 'arch/no-context-after-await': ['error', { composables: o.dataComposables }] }
     },
     {
       // A timer without scope-aware cleanup outlives the component. A plugin and a declared client
