@@ -6,6 +6,31 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.8.0]
+
+### Added
+
+- `arch/no-context-after-await`: a Nuxt or Vue context composable (`useNuxtApp`,
+  `useRuntimeConfig`, `useState`, `useRoute`, `inject`, `useI18n`, `useQuery`…, plus the app's
+  `dataComposables`) called after an `await` in code that runs during SSR — a `use*` composable
+  body, a `useAsyncData` / `callOnce` handler, a Pinia Colada `query`. The server throws
+  "[nuxt] instance unavailable" there.
+- `arch/link-needs-locale-path` (i18n apps): `<NuxtLink to="/…">` and literal `:to` paths, which
+  skip the locale prefix.
+- `no-useless-assignment` (base rules, harness-owned): a value overwritten or never read.
+- Static check "Unvalidated getQuery": h3's `getQuery(event)` whose result is not `.parse()`d;
+  prefer `getValidatedQuery(event, schema.parse)`.
+- `typecheckProjects` option (default: `tools` and `scripts` when they have a `tsconfig.json`):
+  `full` typechecks each with `vue-tsc --noEmit -p <dir>`, and type-aware ESLint lints them.
+
+### Changed
+
+- `@typescript-eslint/no-unnecessary-condition` allows a literal `while (true)` / `for (;;)`
+  (`allowConstantLoopConditions: 'only-allowed-literals'`).
+- Peer dependency floor: `@typescript-eslint/*` `^8.24.0` (was `^8.12.0`), the first version with
+  that option.
+
+
 ## [0.7.0]
 
 ### Added
