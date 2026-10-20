@@ -20,7 +20,7 @@ A deterministic quality gate for **Nuxt 4** apps, built for teams that ship code
 Every finding explains itself: `❌ what → 💡 why → 🛠 fix → 📖 doc`.
 
 ```text
-  @edumapper/nuxt-harness 0.8.0 — fast gate, 3 files
+  @edumapper/nuxt-harness 0.9.0 — fast gate, 3 files
 
   → ESLint (harness rules).......... FAIL 412ms
     ✗ app/components/ProductCard.vue:4 [arch/no-smart-calls] ❌ useRouter() — navigation in a Presenter
@@ -34,13 +34,13 @@ Every finding explains itself: `❌ what → 💡 why → 🛠 fix → 📖 doc`
 Try it on any Nuxt 4 repository, with nothing installed:
 
 ```bash
-npx --package github:edumapper/nuxt-harness#v0.8.0 nuxt-harness fast --all
+npx --package github:edumapper/nuxt-harness#v0.9.0 nuxt-harness fast --all
 ```
 
 Then adopt it:
 
 ```bash
-npm i -D github:edumapper/nuxt-harness#v0.8.0   # or pnpm / yarn / bun add -d
+npm i -D github:edumapper/nuxt-harness#v0.9.0   # or pnpm / yarn / bun add -d
 ```
 
 ```js
