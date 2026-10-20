@@ -64,6 +64,18 @@ describe('file selection is not allowed to be vacuously green', () => {
     expect(report.checks[0]?.findings[0]?.rule).toBe('harness/no-files')
   })
 
+  it('full typechecks each typecheck project (tools/) with vue-tsc', async () => {
+    const repo = cleanRepo('typecheck-projects')
+    mkdirSync(join(repo, 'tools'), { recursive: true })
+    writeFileSync(join(repo, 'tools/tsconfig.json'), '{}')
+    writeFileSync(join(repo, 'package.json'), '{}')
+    const report = await runGate('full', { root: repo })
+    const step = report.checks.find(c => c.name === 'TypeScript (tools/)')
+    // vue-tsc is not installed in this fixture: the step exists and says so, it does not skip silently.
+    expect(step?.status).toBe('fail')
+    expect(step?.findings[0]?.message).toMatch(/vue-tsc not installed/)
+  })
+
   it('--all finds files without a git repository', async () => {
     const project = join(root, 'project')
     mkdirSync(join(project, 'app/pages'), { recursive: true })

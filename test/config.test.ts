@@ -94,6 +94,43 @@ describe('typeAware — runs with type information', () => {
     const [result] = await eslint.lintFiles(['app/utils/status.ts'])
     expect(result?.messages.map(m => m.ruleId)).toEqual(['@typescript-eslint/switch-exhaustiveness-check'])
   })
+
+  // `while (true)` with a break is a deliberate loop; a constant condition on a typed value is not.
+  it('allows an intentional infinite loop, not a condition the types prove constant', async () => {
+    const cwd = project({
+      'tsconfig.json': '{"compilerOptions":{"strict":true,"noEmit":true},"include":["app/**/*.ts"]}',
+      'app/utils/loop.ts': 'export function drain(next: () => number | null): number {\n  let n = 0\n  while (true) {\n    if (next() === null) break\n    n++\n  }\n  return n\n}\nexport function label(x: string): string {\n  return x ?? \'\'\n}\n'
+    })
+    const config = [...await standalone({ root: cwd }), ...typeAware(cwd, { root: cwd })]
+    const eslint = new ESLint({ cwd, overrideConfigFile: true, overrideConfig: config })
+    const [result] = await eslint.lintFiles(['app/utils/loop.ts'])
+    expect(result?.messages.map(m => [m.ruleId, m.line])).toEqual([['@typescript-eslint/no-unnecessary-condition', 10]])
+  })
+
+  // A CLI in tools/ that imports a moved helper crashes at its first call; nuxt typecheck never sees it.
+  it('lints the typecheck projects (tools/, scripts/) with types', async () => {
+    const cwd = project({
+      'app/app.vue': '',
+      'tsconfig.json': '{"compilerOptions":{"strict":true,"noEmit":true},"include":["app/**/*.ts"]}',
+      'tools/tsconfig.json': '{"compilerOptions":{"strict":true,"noEmit":true},"include":["**/*.ts"]}',
+      'tools/cli.ts': 'export function name(arg: string): string {\n  return arg ?? \'none\'\n}\n'
+    })
+    expect(resolveOptions({ root: cwd }).typecheckProjects).toEqual(['tools'])
+    const config = [...await standalone({ root: cwd }), ...typeAware(cwd, { root: cwd })]
+    const eslint = new ESLint({ cwd, overrideConfigFile: true, overrideConfig: config })
+    const [result] = await eslint.lintFiles(['tools/cli.ts'])
+    expect(result?.messages.map(m => m.ruleId)).toEqual(['@typescript-eslint/no-unnecessary-condition'])
+  })
+})
+
+describe('harness — base rules', () => {
+  it('reports an assignment no one reads (no-useless-assignment)', async () => {
+    const cwd = project({ 'app/app.vue': '' })
+    const eslint = new ESLint({ cwd, overrideConfigFile: true, overrideConfig: await standalone({ root: cwd }) })
+    const code = 'export async function load(read: () => Promise<string>): Promise<string> {\n  let text = \'\'\n  try {\n    text = await read()\n  } catch {\n    return \'\'\n  }\n  return text\n}\n'
+    const [result] = await eslint.lintText(code, { filePath: join(cwd, 'app/utils/load.ts') })
+    expect(result?.messages.map(m => [m.ruleId, m.line])).toEqual([['no-useless-assignment', 2]])
+  })
 })
 
 // The SSR rules gate the render path. Tests, server code, plugins and declared client singletons

@@ -30,6 +30,8 @@ import noProvideInject from './rules/no-provide-inject.js'
 import noReverseLayerImport from './rules/no-reverse-layer-import.js'
 import noServerUiImport from './rules/no-server-ui-import.js'
 import asyncDataNeedsKey from './rules/async-data-needs-key.js'
+import linkNeedsLocalePath from './rules/link-needs-locale-path.js'
+import noContextAfterAwait from './rules/no-context-after-await.js'
 import noBrowserApiInSetup from './rules/no-browser-api-in-setup.js'
 import noLocaleFormatInRender from './rules/no-locale-format-in-render.js'
 import noModuleMutableState from './rules/no-module-mutable-state.js'
@@ -63,6 +65,8 @@ export const arch = {
     'no-reserved-item-value': noReservedItemValue,
     'no-nondeterministic-key': noNondeterministicKey,
     'async-data-needs-key': asyncDataNeedsKey,
+    'no-context-after-await': noContextAfterAwait,
+    'link-needs-locale-path': linkNeedsLocalePath,
     'no-locale-format-in-render': noLocaleFormatInRender,
     'no-browser-api-in-setup': noBrowserApiInSetup,
     'timer-needs-scope-dispose': timerNeedsScopeDispose,
@@ -130,6 +134,9 @@ export function harness(options) {
         'complexity': ['error', 20],
         // Long positional parameter lists are the cheapest SRP smell to detect.
         'max-params': ['error', 4],
+        // A value written and then overwritten or never read is dead code, often a lost result
+        // (`let x = null; try { x = … }` where the first value can never be read).
+        'no-useless-assignment': 'error',
         '@typescript-eslint/no-explicit-any': 'error',
         'arch/no-figma-asset-url': 'error',
         // ── Guards: early return for real states, named compound conditions ──
@@ -171,7 +178,7 @@ export function harness(options) {
           group: ['~~/server/**', ...o.allowServerImportsInApp.map(g => `!${g}`)],
           message: '❌ app/ imports server code. 💡 Server modules pull DB access and secrets into the client bundle. 🛠 Move the schema or type to shared/ and import it from #shared.'
         }]),
-        ...(o.i18n ? { 'no-restricted-syntax': ['error', NAVIGATE_LITERAL, NAVIGATE_TEMPLATE] } : {}),
+        ...(o.i18n ? { 'no-restricted-syntax': ['error', NAVIGATE_LITERAL, NAVIGATE_TEMPLATE], 'arch/link-needs-locale-path': 'error' } : {}),
         'arch/no-bare-navigate': 'error',
         // Untyped, invisible dependencies — props down or a shared composable instead.
         'arch/no-provide-inject': 'error',
@@ -260,6 +267,13 @@ export function harness(options) {
       }
     },
     {
+      // Code that runs during SSR loses the per-request Nuxt/Vue context at its first await.
+      name: 'nuxt-harness/ssr-context',
+      files: appSide,
+      ignores: notOnServer,
+      rules: { 'arch/no-context-after-await': ['error', { composables: o.dataComposables }] }
+    },
+    {
       // A timer without scope-aware cleanup outlives the component. A plugin and a declared client
       // singleton live as long as the app, so an app-lifetime listener there is the point.
       name: 'nuxt-harness/ssr-timers',
@@ -303,18 +317,19 @@ function designSystem(o, files) {
  * @returns {import('eslint').Linter.Config[]}
  */
 export function typeAware(tsconfigRootDir = process.cwd(), options = {}) {
-  const { srcDir } = resolveOptions({ root: tsconfigRootDir, ...options })
+  const { srcDir, typecheckProjects } = resolveOptions({ root: tsconfigRootDir, ...options })
   return [{
     name: 'nuxt-harness/type-aware',
-    files: [...appGlobs(srcDir, '**/*.{vue,ts}'), ...rootGlobs('server', '**/*.ts'), ...rootGlobs('shared', '**/*.ts')],
+    files: [...appGlobs(srcDir, '**/*.{vue,ts}'), ...rootGlobs('server', '**/*.ts'), ...rootGlobs('shared', '**/*.ts'), ...typecheckProjects.map(dir => `${dir}/**/*.ts`)],
     // Nuxt's root tsconfig is solution-style (references into .nuxt/); the project
     // service resolves each file to the referenced project that owns it.
     languageOptions: { parserOptions: { projectService: true, tsconfigRootDir } },
     rules: {
       // Adding a union member must break every switch that forgot it.
       '@typescript-eslint/switch-exhaustiveness-check': ['error', { considerDefaultExhaustiveForUnions: true }],
-      // A condition the types prove constant is either dead code or a lying type.
-      '@typescript-eslint/no-unnecessary-condition': 'error',
+      // A condition the types prove constant is either dead code or a lying type. An intentional
+      // `while (true)` / `for (;;)` stays allowed; `while (x !== null)` on a non-null x does not.
+      '@typescript-eslint/no-unnecessary-condition': ['error', { allowConstantLoopConditions: 'only-allowed-literals' }],
       '@typescript-eslint/no-unsafe-return': 'error',
       // A cast the types already satisfy hides the real type from the next reader.
       '@typescript-eslint/no-unnecessary-type-assertion': 'error'

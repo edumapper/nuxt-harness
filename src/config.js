@@ -26,6 +26,7 @@ import { pathToFileURL } from 'node:url'
  * @property {string[]} [dataComposables] The app's own data-layer composables, treated like `useFetch` in Presenters.
  * @property {string[]} [bodyReaders] The app's own request-body readers (e.g. a size-capped `readJsonBody`), checked like `readBody`.
  * @property {string[]} [allowServerImportsInApp] `~~/server/…` globs that `app/` may import (e.g. shared validators).
+ * @property {string[]} [typecheckProjects] Directories with their own tsconfig.json that `nuxt typecheck` does not cover (CLIs, scripts). The full gate typechecks each with vue-tsc, and type-aware ESLint lints them. Default: `tools` and `scripts` when they have a tsconfig.json.
  * @property {boolean} [selectComponents] The app renders Reka-based selects (Nuxt UI, reka-ui, radix-vue): turns on `no-reserved-item-value`. Default: detected from the dependencies.
  * @property {string[]} [clientSingletons] Root-relative globs of modules that deliberately hold one browser-side instance for the app's lifetime (written only in the browser). Exempt from `no-module-mutable-state` and `timer-needs-scope-dispose`.
  * @property {false | DesignSystemOptions} [designSystem] Opt-in design-system rules. Default `false`.
@@ -101,6 +102,7 @@ export function resolveOptions(options = {}) {
     dataComposables: options.dataComposables ?? [],
     bodyReaders: options.bodyReaders ?? [],
     allowServerImportsInApp: options.allowServerImportsInApp ?? [],
+    typecheckProjects: options.typecheckProjects ?? ['tools', 'scripts'].filter(dir => existsSync(join(root, dir, 'tsconfig.json'))),
     selectComponents: options.selectComponents ?? SELECT_LIBRARIES.some(name => name in deps),
     clientSingletons: options.clientSingletons ?? [],
     designSystem: ds

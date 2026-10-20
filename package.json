@@ -1,6 +1,6 @@
 {
   "name": "@edumapper/nuxt-harness",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Deterministic quality gate for Nuxt 4 apps: 5-layer architecture ESLint rules, guard and locality checks, CRAP, and a no-install fast mode and Claude Code hooks for AI agents.",
   "keywords": [
     "nuxt",
@@ -49,11 +49,11 @@
     "test": "vitest run"
   },
   "peerDependencies": {
-    "@typescript-eslint/eslint-plugin": "^8.12.0",
-    "@typescript-eslint/parser": "^8.12.0",
+    "@typescript-eslint/eslint-plugin": "^8.24.0",
+    "@typescript-eslint/parser": "^8.24.0",
     "eslint": "^9.24.0 || ^10.0.0",
     "eslint-plugin-vue": "^10.0.0",
-    "vue-eslint-parser": "^10.0.0"
+    "vue-eslint-parser": "^10.4.0"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "8.71.1",

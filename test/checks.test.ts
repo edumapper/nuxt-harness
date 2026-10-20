@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { consoleHygiene, escapeHatches, i18nKeys, importHygiene, todoMarkers, unvalidatedReadBody } from '../src/checks.js'
+import { consoleHygiene, escapeHatches, i18nKeys, importHygiene, todoMarkers, unvalidatedGetQuery, unvalidatedReadBody } from '../src/checks.js'
 import { applyBaseline, crap, functionCoverage } from '../src/crap.js'
 
 let root: string | undefined
@@ -21,6 +21,26 @@ function fixture(files: Record<string, string>) {
 afterEach(() => {
   if (root) rmSync(root, { recursive: true, force: true })
   root = undefined
+})
+
+describe('unvalidatedGetQuery', () => {
+  it('flags getQuery(event) used without a schema: a repeated key is an array, a number a string', () => {
+    const findings = unvalidatedGetQuery.run(fixture({ 'server/api/list.get.ts': 'const { page, limit } = getQuery(event)\nreturn list(Number(page), Number(limit))\n' }))
+    expect(findings).toHaveLength(1)
+    expect(findings[0]?.message).toContain('getValidatedQuery')
+  })
+
+  it('accepts getValidatedQuery, an inline parse, and a parse of the variable on the next lines', () => {
+    expect(unvalidatedGetQuery.run(fixture({
+      'server/api/a.get.ts': 'const query = await getValidatedQuery(event, schema.parse)\n',
+      'server/api/b.get.ts': 'const query = schema.parse(getQuery(event))\n',
+      'server/api/c.get.ts': 'const raw = getQuery(event)\nconst query = schema.parse(raw)\n'
+    }))).toEqual([])
+  })
+
+  it('ignores ufo\'s getQuery(url), which parses a URL the app built', () => {
+    expect(unvalidatedGetQuery.run(fixture({ 'server/utils/links.ts': 'const params = getQuery(link.href)\n' }))).toEqual([])
+  })
 })
 
 describe('unvalidatedReadBody', () => {

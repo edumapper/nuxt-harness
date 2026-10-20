@@ -177,12 +177,15 @@ function packageManager(root) {
  * defines one (the app knows its globs), otherwise the bare binary. A step with
  * `when` runs only if one of those files exists.
  * @param {'app' | '.'} srcDir
+ * @param {string[]} typecheckProjects directories `nuxt typecheck` does not cover (tools/, scripts/)
  * @returns {ToolStep[]}
  */
-function toolSteps(srcDir) {
+function toolSteps(srcDir, typecheckProjects) {
   const appGlob = srcDir === 'app' ? 'app/**/*.{ts,vue}' : '{components,composables,layouts,middleware,pages,plugins,utils}/**/*.{ts,vue}'
   return [
     { name: 'TypeScript (nuxt typecheck)', bin: 'nuxt', args: ['typecheck'] },
+    // A CLI that imports a moved app helper crashes at its first call: nuxt typecheck never sees it.
+    ...typecheckProjects.map(dir => ({ name: `TypeScript (${dir}/)`, bin: 'vue-tsc', args: ['--noEmit', '-p', dir] })),
     { name: 'ESLint (project, type-aware)', bin: 'eslint', args: ['.', '--max-warnings', '0'] },
     { name: 'Dead code (knip)', bin: 'knip', args: ['--reporter', 'compact'], when: ['knip.json', 'knip.jsonc', 'knip.config.ts'] },
     { name: 'Spelling (cspell)', script: 'check:spell', bin: 'cspell', args: [appGlob, 'server/**/*.ts', 'shared/**/*.ts', '--no-progress'], when: ['cspell.json', 'cspell.config.yaml', '.cspell.json'] },
@@ -271,7 +274,7 @@ const toRelative = (root, p) => isAbsolute(p) ? relative(root, p) : relative(roo
 export async function runGate(mode, { root, files, all, updateBaseline, config, allowEmpty }) {
   const start = performance.now()
   const options = { ...(config ?? await loadConfig(root)), root }
-  const { srcDir } = resolveOptions(options)
+  const { srcDir, typecheckProjects } = resolveOptions(options)
   const scope = sourcePattern(srcDir)
   const selected = mode === 'full' || all
     ? allFiles(root, scope)
@@ -318,7 +321,7 @@ export async function runGate(mode, { root, files, all, updateBaseline, config, 
   /** @type {CheckReport[]} */
   let checks = await fastChecks(root, selected, options)
   if (mode === 'full') {
-    const tools = await Promise.all(toolSteps(srcDir).map(step => runTool(root, step)))
+    const tools = await Promise.all(toolSteps(srcDir, typecheckProjects).map(step => runTool(root, step)))
     // CRAP joins complexity with the coverage the vitest step just wrote.
     const crapCheck = await timed(CRAP_CHECK, () => crapFindings(root, selected, options))
     checks = [...checks, ...tools, crapCheck]

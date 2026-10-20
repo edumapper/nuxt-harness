@@ -52,7 +52,7 @@ The file prefix decides what ESLint allows. No discipline required — the gate 
 | Command | When | What | Needs |
 |---|---|---|---|
 | `nuxt-harness fast` | after every edit — hooks run it on the edited file, and on every changed file before a turn ends | static checks + harness ESLint rules on changed files (~1 s) | nothing: no app `node_modules`, no `.nuxt/` |
-| `nuxt-harness full` | before declaring done, and in CI | fast checks on every file + `nuxt typecheck`, type-aware ESLint, knip, cspell, jscpd, vitest + CRAP (the tools the app has configured) | the app installed |
+| `nuxt-harness full` | before declaring done, and in CI | fast checks on every file + `nuxt typecheck` (and `vue-tsc` on `tools/` / `scripts/`), type-aware ESLint, knip, cspell, jscpd, vitest + CRAP (the tools the app has configured) | the app installed |
 
 Both print `❌ what → 💡 why → 🛠 fix → 📖 doc` findings and write `.harness/report.json`
 (`--json` prints it). The exit code is non-zero on any error.
@@ -77,8 +77,8 @@ below the recorded count; one more violation and all of them report. These files
 | Illegal states | `arch/max-boolean-props`, `switch-exhaustiveness-check`, `no-unnecessary-condition` (type-aware) |
 | Guards | `arch/max-condition-operands` (max 2 in `if`/`v-if`/`v-show`), `no-else-return`, `max-depth: 2`, auth gates only in middleware |
 | Reactivity & SSR | `arch/max-watchers` (≤ 3 per file), no `provide`/`inject`, `navigateTo` awaited or returned, `<ClientOnly>` preceded by a reason |
-| SSR determinism (invisible to typecheck and curl) | `arch/no-reserved-item-value` (reserved `''` in select items), `arch/no-nondeterministic-key`, `arch/async-data-needs-key`, `arch/no-locale-format-in-render`, `arch/no-browser-api-in-setup`, `arch/no-module-mutable-state`, `arch/timer-needs-scope-dispose` |
-| Locality | R0–R4 layer rules, import boundaries (`app` ↛ `server`, `server` ↛ `app`, `shared` ↛ both), no event bus |
+| SSR determinism (invisible to typecheck and curl) | `arch/no-reserved-item-value` (reserved `''` in select items), `arch/no-nondeterministic-key`, `arch/async-data-needs-key`, `arch/no-locale-format-in-render`, `arch/no-browser-api-in-setup`, `arch/no-module-mutable-state`, `arch/timer-needs-scope-dispose`, `arch/no-context-after-await` (context composable after an await during SSR) |
+| Locality | R0–R4 layer rules, import boundaries (`app` ↛ `server`, `server` ↛ `app`, `shared` ↛ both), no event bus, localized links (`navigateTo`, `<NuxtLink>`) with i18n |
 | CRAP | `complexity` ≤ 20; CRAP = c² × (1 − cov)³ + c ≤ 30 per `.ts` function (full gate) |
 | Design system (opt-in) | hardcoded colors, palettes the app allows, nested bordered boxes |
 
