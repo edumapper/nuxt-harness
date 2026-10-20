@@ -76,7 +76,7 @@ below the recorded count; one more violation and all of them report. These files
 | Single source of truth | schemas + inferred types, `vue/no-setup-props-reactivity-loss`, i18n key check, jscpd, knip |
 | Illegal states | `arch/max-boolean-props`, `switch-exhaustiveness-check`, `no-unnecessary-condition` (type-aware) |
 | Guards | `arch/max-condition-operands` (max 2 in `if`/`v-if`/`v-show`), `no-else-return`, `max-depth: 2`, auth gates only in middleware |
-| Reactivity & SSR | `arch/max-watchers` (≤ 3 per file), no `provide`/`inject`, `navigateTo` awaited or returned, `<ClientOnly>` preceded by a reason |
+| Reactivity & SSR | `arch/max-watchers` (≤ 3 per file), no `provide`/`inject`, `navigateTo` awaited or returned, `<ClientOnly>` and `.client` files carry a `ClientOnly: <why>` comment |
 | SSR determinism (invisible to typecheck and curl) | `arch/no-reserved-item-value` (reserved `''` in select items), `arch/no-nondeterministic-key`, `arch/async-data-needs-key`, `arch/no-locale-format-in-render`, `arch/no-browser-api-in-setup`, `arch/no-module-mutable-state`, `arch/timer-needs-scope-dispose`, `arch/no-context-after-await` (context composable after an await during SSR) |
 | Locality | R0–R4 layer rules, import boundaries (`app` ↛ `server`, `server` ↛ `app`, `shared` ↛ both), no event bus, localized links (`navigateTo`, `<NuxtLink>`) with i18n |
 | CRAP | `complexity` ≤ 20; CRAP = c² × (1 − cov)³ + c ≤ 30 per `.ts` function (full gate) |

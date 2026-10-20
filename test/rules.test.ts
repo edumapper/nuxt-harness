@@ -3,6 +3,7 @@ import { RuleTester } from 'eslint'
 import { afterAll, describe, it } from 'vitest'
 import vueParser from 'vue-eslint-parser'
 
+import clientFileNeedsReason from '../src/rules/client-file-needs-reason.js'
 import clientOnlyNeedsReason from '../src/rules/client-only-needs-reason.js'
 import linkNeedsLocalePath from '../src/rules/link-needs-locale-path.js'
 import maxBooleanProps from '../src/rules/max-boolean-props.js'
@@ -199,7 +200,42 @@ vueTester.run('client-only-needs-reason', clientOnlyNeedsReason, {
     // a comment separated by other markup does not explain this element
     { filename: 'X.vue', code: sfc('<div>\n    <!-- ClientOnly: vaul drawer touches document -->\n    <span />\n    <ClientOnly><Drawer /></ClientOnly>\n  </div>'), errors: 1 },
     // a token comment is not an explanation
-    { filename: 'X.vue', code: sfc('<div>\n    <!-- client only -->\n    <client-only><Drawer /></client-only>\n  </div>'), errors: 1 }
+    { filename: 'X.vue', code: sfc('<div>\n    <!-- client only -->\n    <client-only><Drawer /></client-only>\n  </div>'), errors: 1 },
+    // a section label says what, not why
+    { filename: 'X.vue', code: sfc('<div>\n    <!-- Bookmark and Avatar (only shown when logged in) -->\n    <ClientOnly><Drawer /></ClientOnly>\n  </div>'), errors: 1 },
+    // the prefix alone is not a reason
+    { filename: 'X.vue', code: sfc('<div>\n    <!-- ClientOnly: drawer -->\n    <ClientOnly><Drawer /></ClientOnly>\n  </div>'), errors: 1 }
+  ]
+})
+
+// A .client file drops SSR for everything in it: it opens with the same written reason.
+const editor = '<template>\n  <div ref="el" />\n</template>\n'
+vueTester.run('client-file-needs-reason (vue)', clientFileNeedsReason, {
+  valid: [
+    { filename: 'app/components/RichTextEditor.client.vue', code: `<!-- ClientOnly: TipTap needs the DOM, the editor only exists in the browser -->\n${editor}` },
+    // a .client file is the only one concerned
+    { filename: 'app/components/RichTextEditor.vue', code: editor }
+  ],
+  invalid: [
+    { filename: 'app/components/RichTextEditor.client.vue', code: editor, errors: [{ messageId: 'missingReason' }] },
+    // a description of the component is not the reason it skips SSR
+    { filename: 'app/components/StickerPeel.client.vue', code: `<!-- Full-viewport transparent WebGL canvas that renders stickers -->\n${editor}`, errors: 1 },
+    // the reason belongs at the top, not inside the template
+    { filename: 'app/components/RichTextEditor.client.vue', code: '<template>\n  <!-- ClientOnly: TipTap needs the DOM in the browser -->\n  <div />\n</template>\n', errors: 1 }
+  ]
+})
+
+ruleTester.run('client-file-needs-reason (script)', clientFileNeedsReason, {
+  valid: [
+    { filename: 'app/plugins/unload-guard.client.ts', code: '// ClientOnly: beforeunload only exists in the browser,\n// and uploads only run there.\nexport default defineNuxtPlugin(() => {})' },
+    { filename: 'app/plugins/unload-guard.client.ts', code: '/**\n * ClientOnly: warns before a reload while an upload runs in this tab.\n */\nexport default defineNuxtPlugin(() => {})' },
+    // after the imports is where a script's header usually sits
+    { filename: 'app/plugins/unload-guard.client.ts', code: 'import { guard } from \'~/utils/guard\'\n\n// ClientOnly: beforeunload only fires in a browser tab\nexport default defineNuxtPlugin(() => guard())' }
+  ],
+  invalid: [
+    { filename: 'app/plugins/unload-guard.client.ts', code: 'export default defineNuxtPlugin(() => {})', errors: 1 },
+    // a comment after the first statement is not the file's header
+    { filename: 'app/plugins/unload-guard.client.ts', code: 'export default defineNuxtPlugin(() => {})\n// ClientOnly: beforeunload only exists in the browser', errors: 1 }
   ]
 })
 

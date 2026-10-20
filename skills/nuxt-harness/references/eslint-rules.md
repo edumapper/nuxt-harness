@@ -70,7 +70,8 @@ Principle: use early returns for states that really happen. Don't check states t
 | G5 | A `v-if`/`v-else-if`/`v-show` with more than 2 operands becomes a computed. | `arch/max-condition-operands` |
 | G6 | Async handlers set the lock before the first `await`. | code review, not lintable |
 | | No more than 3 watchers per file. Derived state is a `computed`; a reaction to a user action goes in that handler; prop sync uses `defineModel`. | `arch/max-watchers` <a id="max-watchers"></a> |
-| | Every `<ClientOnly>` is directly preceded by an HTML comment (4+ words) saying why the subtree can't render on the server. | `arch/client-only-needs-reason` <a id="client-only-needs-reason"></a> |
+| | Every `<ClientOnly>` is directly preceded by `<!-- ClientOnly: <why> -->`: the prefix, then 4+ words saying why the subtree can't render on the server. A section label ("Navigation drawer") is not a reason, and `rg "ClientOnly:"` lists every reason in the app. | `arch/client-only-needs-reason` <a id="client-only-needs-reason"></a> |
+| | Every `*.client.vue` / `*.client.ts` file opens with the same reason: `<!-- ClientOnly: <why> -->` before the first block of a `.vue`, `// ClientOnly: <why>` before the first non-import statement of a script. Nuxt never loads these files on the server, so they drop SSR, and the SSR rules skip them. | `arch/client-file-needs-reason` <a id="client-file-needs-reason"></a> |
 
 ## Control flow & size
 
@@ -90,7 +91,8 @@ findable in the payload. These rules catch the classes that SSR HTML, `curl` and
 cannot see - the page returns 200 with correct HTML and breaks in a browser.
 
 Code that never runs on the server is exempt from every rule below: test files and `*.client.vue` /
-`*.client.ts` files, which Nuxt never loads there. Pages under a `ssr: false` route rule are not
+`*.client.ts` files, which Nuxt never loads there (each one states why at its top:
+`arch/client-file-needs-reason`). Pages under a `ssr: false` route rule are not
 exempt: keep them SSR-safe, so turning SSR back on is a config change, not a rewrite.
 
 | Rule | Files | Forbids |
