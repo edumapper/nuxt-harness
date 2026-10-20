@@ -173,12 +173,12 @@ describe('SSR rules — scoped to the render path', () => {
     const cwd = project({ 'app/app.vue': '' })
     const read = 'export const width = window.innerWidth\n'
     expect(await lint(cwd, 'app/pages/admin/size.ts', read)).toEqual(['arch/no-browser-api-in-setup'])
-    expect(await lint(cwd, 'app/utils/size.client.ts', read)).toEqual([])
+    expect(await lint(cwd, 'app/utils/size.client.ts', `// ClientOnly: the viewport width only exists in the browser\n${read}`)).toEqual([])
   })
 
   it('lets a plugin hold an app-lifetime listener, not a composable', async () => {
     const cwd = project({ 'app/app.vue': '' })
-    expect(await lint(cwd, 'app/plugins/guard.client.ts', listener)).toEqual([])
+    expect(await lint(cwd, 'app/plugins/guard.client.ts', `// ClientOnly: beforeunload only fires in a browser tab\n${listener}`)).toEqual([])
     expect(await lint(cwd, 'app/composables/useGuard.ts', listener)).toEqual(['arch/timer-needs-scope-dispose'])
   })
 })

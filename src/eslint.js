@@ -14,6 +14,7 @@
  * Options are documented in ./config.js and skills/nuxt-harness/references/configuration.md.
  */
 import { appGlobs, resolveOptions, rootGlobs } from './config.js'
+import clientFileNeedsReason from './rules/client-file-needs-reason.js'
 import clientOnlyNeedsReason from './rules/client-only-needs-reason.js'
 import maxBooleanProps from './rules/max-boolean-props.js'
 import maxConditionOperands from './rules/max-condition-operands.js'
@@ -47,6 +48,7 @@ export const arch = {
   meta: { name: '@edumapper/nuxt-harness' },
   rules: {
     'client-only-needs-reason': clientOnlyNeedsReason,
+    'client-file-needs-reason': clientFileNeedsReason,
     'max-boolean-props': maxBooleanProps,
     'max-condition-operands': maxConditionOperands,
     'max-watchers': maxWatchers,
@@ -167,6 +169,12 @@ export function harness(options) {
         // Dropping SSR must be a written decision, not a hydration-warning silencer.
         'arch/client-only-needs-reason': 'error'
       }
+    },
+    {
+      // A .client file drops SSR for everything in it, and the SSR rules skip it: same written decision.
+      name: 'nuxt-harness/client-files',
+      files: [...app('**/*.client.{vue,ts,js}'), ...rootGlobs('modules', '**/*.client.{vue,ts,js}')],
+      rules: { 'arch/client-file-needs-reason': 'error' }
     },
 
     // ── Locality: import boundaries between app / server / shared ────────────

@@ -6,6 +6,28 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.9.0]
+
+### Added
+
+- `arch/client-file-needs-reason`: a `*.client.vue` / `*.client.ts` file opens with
+  `<!-- ClientOnly: <why> -->` (`.vue`) or `// ClientOnly: <why>` (scripts, after the imports).
+  Nuxt never loads these files on the server and the SSR rules skip them, so like `<ClientOnly>`
+  they must say why.
+
+### Changed
+
+- `arch/client-only-needs-reason` requires the `ClientOnly:` prefix: a 4-word section label above
+  the element ("Bookmark and Avatar (only shown when logged in)") no longer passes for a reason.
+  `rg "ClientOnly:"` lists every place the app renders only in the browser, each with its why.
+
+### Upgrading
+
+Prefix the comments that already explain a `<ClientOnly>` with `ClientOnly:`, and turn section
+labels into reasons. Give each `.client` file a header with its reason, or drop the suffix if it
+can render on the server.
+
+
 ## [0.8.0]
 
 ### Added
