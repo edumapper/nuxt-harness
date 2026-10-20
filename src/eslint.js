@@ -33,6 +33,7 @@ import noServerUiImport from './rules/no-server-ui-import.js'
 import asyncDataNeedsKey from './rules/async-data-needs-key.js'
 import linkNeedsLocalePath from './rules/link-needs-locale-path.js'
 import noContextAfterAwait from './rules/no-context-after-await.js'
+import noRawRequestInput from './rules/no-raw-request-input.js'
 import noBrowserApiInSetup from './rules/no-browser-api-in-setup.js'
 import noLocaleFormatInRender from './rules/no-locale-format-in-render.js'
 import noModuleMutableState from './rules/no-module-mutable-state.js'
@@ -68,6 +69,7 @@ export const arch = {
     'no-nondeterministic-key': noNondeterministicKey,
     'async-data-needs-key': asyncDataNeedsKey,
     'no-context-after-await': noContextAfterAwait,
+    'no-raw-request-input': noRawRequestInput,
     'link-needs-locale-path': linkNeedsLocalePath,
     'no-locale-format-in-render': noLocaleFormatInRender,
     'no-browser-api-in-setup': noBrowserApiInSetup,
@@ -201,6 +203,13 @@ export function harness(options) {
         // Access policy lives in middleware, not in what it protects.
         'arch/no-auth-gate-outside-middleware': ['error', { composables: o.authComposables }]
       }
+    },
+    {
+      // Request input reaches the app only through a schema: no raw readBody/getQuery/getRouterParam.
+      name: 'nuxt-harness/server-input',
+      files: server,
+      ignores: TEST_FILES,
+      rules: { 'arch/no-raw-request-input': ['error', { readers: o.bodyReaders }] }
     },
     {
       name: 'nuxt-harness/locality-server',

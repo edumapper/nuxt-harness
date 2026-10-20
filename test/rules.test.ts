@@ -12,6 +12,7 @@ import maxWatchers from '../src/rules/max-watchers.js'
 import noAuthGateOutsideMiddleware from '../src/rules/no-auth-gate-outside-middleware.js'
 import noBareNavigate from '../src/rules/no-bare-navigate.js'
 import noContextAfterAwait from '../src/rules/no-context-after-await.js'
+import noRawRequestInput from '../src/rules/no-raw-request-input.js'
 import noDataCallsInOperator from '../src/rules/no-data-calls-in-operator.js'
 import noHardcodedColor from '../src/rules/no-hardcoded-color.js'
 import noNestedBorderBox from '../src/rules/no-nested-border-box.js'
@@ -277,5 +278,35 @@ vueTester.run('link-needs-locale-path', linkNeedsLocalePath, {
     { filename: 'app/components/Header.vue', code: sfc('<NuxtLink to="/" class="logo">Home</NuxtLink>'), errors: [{ messageId: 'literalPath' }] },
     { filename: 'app/components/Header.vue', code: sfc('<NuxtLink :to="\'/about\'">About</NuxtLink>'), errors: 1 },
     { filename: 'app/components/Header.vue', code: sfc('<nuxt-link :to="`/programs/${id}`">x</nuxt-link>'), errors: 1 }
+  ]
+})
+
+// Request input reaches server code only through a schema. The rule reads the structure: a raw
+// value stored in a variable is unvalidated, however close the next .parse( is.
+ruleTester.run('no-raw-request-input', noRawRequestInput, {
+  valid: [
+    { filename: 'server/api/a.post.ts', code: 'const body = await readValidatedBody(event, schema.parse)' },
+    { filename: 'server/api/a.get.ts', code: 'const query = await getValidatedQuery(event, schema)' },
+    { filename: 'server/api/a/[id].get.ts', code: 'const { id } = await getValidatedRouterParams(event, params.parse)' },
+    // straight into a schema: the raw value never exists
+    { filename: 'server/api/a.post.ts', code: 'const parsed = schema.safeParse(await readBody(event))' },
+    { filename: 'server/api/a.get.ts', code: 'const query = v.parse(querySchema, getQuery(event))' },
+    { filename: 'server/utils/ids.ts', code: 'export const id = event => z.uuid().safeParse(getRouterParam(event, \'id\'))' },
+    // the app's reader: its own body reads the request, its call sites go through a schema
+    { filename: 'server/utils/read-json-body.ts', code: 'export async function readJsonBody (event) { return readBody(event) }', options: [{ readers: ['readJsonBody'] }] },
+    { filename: 'server/api/a.post.ts', code: 'const parsed = schema.safeParse(await readJsonBody(event))', options: [{ readers: ['readJsonBody'] }] },
+    // ufo's getQuery parses a URL the app built
+    { filename: 'server/utils/links.ts', code: 'import { getQuery } from \'ufo\'\nconst params = getQuery(link.href)' },
+    // no validated form exists for these
+    { filename: 'server/api/webhook.post.ts', code: 'const raw = await readRawBody(event)' }
+  ],
+  invalid: [
+    { filename: 'server/api/a.post.ts', code: 'const body = await readBody(event)\nawait save(schema.parse(body))', errors: [{ messageId: 'raw' }] },
+    // the probe cases the line heuristic got wrong
+    { filename: 'server/api/a.post.ts', code: 'const body = JSON.parse(await readBody(event))', errors: 1 },
+    { filename: 'server/api/a.get.ts', code: 'const query = getQuery(event)\nawait db.delete(query.id)\nconst parsed = schema.parse(query)', errors: 1 },
+    { filename: 'server/api/a/[id].get.ts', code: 'const id = getRouterParam(event, \'id\')', errors: 1 },
+    { filename: 'server/api/a.get.ts', code: 'import { getQuery } from \'h3\'\nconst q = getQuery(event)', errors: 1 },
+    { filename: 'server/api/a.post.ts', code: 'const body = await readJsonBody(event)', options: [{ readers: ['readJsonBody'] }], errors: 1 }
   ]
 })
