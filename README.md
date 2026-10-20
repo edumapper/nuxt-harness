@@ -9,6 +9,9 @@ A deterministic quality gate for **Nuxt 4** apps, built for teams that ship code
   Composable), enforced by ESLint, so smart components can't quietly grow into monoliths.
 - **Guard and locality rules**: early returns, named conditions, `app` ↛ `server` imports,
   awaited `navigateTo`, auth gates in middleware, no `provide`/`inject`.
+- **SSR-determinism rules**: the bugs typecheck and `curl` can't see — a reserved `''` select
+  value that throws while hydrating, request keys the client can't reproduce, cross-request
+  module state, locale formatting and browser APIs in the render path.
 - **A gate the agent can't switch off**: `@ts-ignore` and `eslint-disable` of harness rules fail the gate.
 - **Fast mode for agents**: lints changed files in ~1 s, without the app's `node_modules` or `.nuxt/`.
 - **Claude Code hooks**: feedback after every edit, and a turn can't end while changed files fail.
@@ -17,7 +20,7 @@ A deterministic quality gate for **Nuxt 4** apps, built for teams that ship code
 Every finding explains itself: `❌ what → 💡 why → 🛠 fix → 📖 doc`.
 
 ```text
-  @edumapper/nuxt-harness 0.6.0 — fast gate, 3 files
+  @edumapper/nuxt-harness 0.7.0 — fast gate, 3 files
 
   → ESLint (harness rules).......... FAIL 412ms
     ✗ app/components/ProductCard.vue:4 [arch/no-smart-calls] ❌ useRouter() — navigation in a Presenter
@@ -31,13 +34,13 @@ Every finding explains itself: `❌ what → 💡 why → 🛠 fix → 📖 doc`
 Try it on any Nuxt 4 repository, with nothing installed:
 
 ```bash
-npx --package github:edumapper/nuxt-harness#v0.6.0 nuxt-harness fast --all
+npx --package github:edumapper/nuxt-harness#v0.7.0 nuxt-harness fast --all
 ```
 
 Then adopt it:
 
 ```bash
-npm i -D github:edumapper/nuxt-harness#v0.6.0   # or pnpm / yarn / bun add -d
+npm i -D github:edumapper/nuxt-harness#v0.7.0   # or pnpm / yarn / bun add -d
 ```
 
 ```js

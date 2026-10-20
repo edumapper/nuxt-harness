@@ -81,6 +81,26 @@ Principle: use early returns for states that really happen. Don't check states t
 | `max-params: 4` | the cheapest SRP smell to detect (off in tests) |
 | `arch/no-figma-asset-url` | expiring Figma MCP asset URLs (`figma.com/api/mcp/asset/…`, `localhost:3845/assets/…`) ship as broken images |
 
+## SSR determinism
+
+What the server renders must be what the client renders, and what the client fetches must be
+findable in the payload. These rules catch the classes that SSR HTML, `curl` and `nuxt typecheck`
+cannot see - the page returns 200 with correct HTML and breaks in a browser.
+
+Code that never runs on the server is exempt from every rule below: test files and `*.client.vue` /
+`*.client.ts` files, which Nuxt never loads there. Pages under a `ssr: false` route rule are not
+exempt: keep them SSR-safe, so turning SSR back on is a config change, not a rewrite.
+
+| Rule | Files | Forbids |
+|---|---|---|
+| `arch/no-reserved-item-value` <a id="no-reserved-item-value"></a> | `app/**`, `modules/**`; on when a Reka-based library is installed (`@nuxt/ui`, `reka-ui`, `radix-vue`, `shadcn-nuxt`; option `selectComponents`) | an item with `value: ''` in an array literal (`[{ label: 'All', value: '' }]`). Select-like components (Reka UI: `USelect`, `USelectMenu`, `UInputMenu`) reserve the empty string for "clear selection" and throw while *rendering* that item, so hydration replaces the page with the error page. Use a sentinel (`const ALL = 'all'`) and map it to `undefined` at the query/URL boundary. Not reported: a lone object (a form model, a prop default), a blank row whose `label` is `''` too, and template literals (`<option value="">` is valid). |
+| `arch/no-nondeterministic-key` <a id="no-nondeterministic-key"></a> | `app/**`, `modules/**` (tests exempt) | a request key built from `Date.now()`, `new Date().getTime()`, `Math.random()`, `performance.now()`, `crypto.randomUUID()` - in `key:` or as the first argument of `useAsyncData`. Node and the browser compute different values, the client misses the payload entry and refetches (content flashes out and back). |
+| `arch/async-data-needs-key` <a id="async-data-needs-key"></a> | `app/**`, `modules/**` | `useAsyncData(handler)` / `useLazyAsyncData(handler)` with no key, whose handler reads `props` or the route (warn). Without a key, Nuxt keys the call by its file and line, so every instance of the component shares one payload entry: two cards with different props show the same data. Pass a key built from what the handler reads (a string, or a getter in Nuxt 4). `useFetch` is not concerned: its key already includes the method, URL, `query`/`params` and body. |
+| `arch/no-locale-format-in-render` <a id="no-locale-format-in-render"></a> | `app/**`, `modules/**` | in the render path (a template expression other than an event handler, a top-level setup statement, a `computed` callback): `toLocaleString` / `toLocaleDateString` / `toLocaleTimeString` / `Intl.*` **without a locale** (the server's default locale is not the user's), or formatting a **date without a `timeZone`** (the server runs in UTC, so the hour and near midnight the day differ). A number with an explicit locale is deterministic and not reported; so are handlers and `onMounted`, which run in the browser. Production Vue does not warn about a hydrated text mismatch. |
+| `arch/no-browser-api-in-setup` <a id="no-browser-api-in-setup"></a> | `app/**`, `modules/**` | a reference to the global `window` / `document` / `localStorage` / `sessionStorage` / `navigator` at the top level of setup or of a module, outside a function and outside an `import.meta.client` / `import.meta.server` / `typeof` guard (`if`, `? :`, `&&`). Scope-aware: a property named `document` (`hit.document.title`), an object key, an interface field or a shadowing local is not the global. Move the work into `onMounted`, guard the branch, or use `<ClientOnly>` with a reason. |
+| `arch/no-module-mutable-state` <a id="no-module-mutable-state"></a> | `app/**`, `modules/**`, `server/**`, `shared/**` (`.ts` modules; SFC setup bodies are per instance and exempt; tests and `clientSingletons` exempt) | a module-scope `ref` / `reactive` / `shallowRef` / `shallowReactive`, or a module-scope `let` assigned in two or more places (a module-scope `computed` derives from one of these and is not reported twice). A module is one instance per server process, so this is cross-request state: use `useState`, `useCookie`, route state, or scope a shared instance per Nuxt app. A cache assigned exactly once from an immutable source is fine. |
+| `arch/timer-needs-scope-dispose` <a id="timer-needs-scope-dispose"></a> | `app/**`, `modules/**` (tests, `plugins/` and `clientSingletons` exempt: they live as long as the app) | `setTimeout` / `setInterval` / `addEventListener` in a file with no `tryOnScopeDispose` / `onScopeDispose` / `onUnmounted` / VueUse helper (warn). A `{ once: true }` listener and a timer the same function clears in a `finally` block are bounded and not reported. Prefer `useDebounceFn`, `useEventListener`, `useTimeoutFn`, `useIntervalFn` - they cancel on scope dispose. |
+
 ## Design system (opt-in)
 
 Off by default — the harness ships no design tokens. Enable with `designSystem` in

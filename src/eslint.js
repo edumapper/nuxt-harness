@@ -29,6 +29,13 @@ import noPresenterInPage from './rules/no-presenter-in-page.js'
 import noProvideInject from './rules/no-provide-inject.js'
 import noReverseLayerImport from './rules/no-reverse-layer-import.js'
 import noServerUiImport from './rules/no-server-ui-import.js'
+import asyncDataNeedsKey from './rules/async-data-needs-key.js'
+import noBrowserApiInSetup from './rules/no-browser-api-in-setup.js'
+import noLocaleFormatInRender from './rules/no-locale-format-in-render.js'
+import noModuleMutableState from './rules/no-module-mutable-state.js'
+import noNondeterministicKey from './rules/no-nondeterministic-key.js'
+import noReservedItemValue from './rules/no-reserved-item-value.js'
+import timerNeedsScopeDispose from './rules/timer-needs-scope-dispose.js'
 import noSmartCallsInPresenter from './rules/no-smart-calls-in-presenter.js'
 
 // ESLint flat config requires plugin objects to be referentially identical
@@ -52,7 +59,14 @@ export const arch = {
     'no-provide-inject': noProvideInject,
     'no-smart-calls': noSmartCallsInPresenter,
     'no-server-ui-import': noServerUiImport,
-    'no-reverse-layer': noReverseLayerImport
+    'no-reverse-layer': noReverseLayerImport,
+    'no-reserved-item-value': noReservedItemValue,
+    'no-nondeterministic-key': noNondeterministicKey,
+    'async-data-needs-key': asyncDataNeedsKey,
+    'no-locale-format-in-render': noLocaleFormatInRender,
+    'no-browser-api-in-setup': noBrowserApiInSetup,
+    'timer-needs-scope-dispose': timerNeedsScopeDispose,
+    'no-module-mutable-state': noModuleMutableState
   }
 }
 
@@ -72,6 +86,8 @@ function restrictedImports(patterns) {
     patterns: patterns.map(p => ({ ...p, allowTypeImports: true }))
   }]
 }
+
+const TEST_FILES = ['**/*.{test,spec}.{ts,js}']
 
 const NAVIGATE_LITERAL = {
   selector: 'CallExpression[callee.name=\'navigateTo\'] > Literal.arguments:first-child[value=/^\\//]',
@@ -94,6 +110,8 @@ export function harness(options) {
   const server = rootGlobs('server', '**/*.{ts,js}')
   const shared = rootGlobs('shared', '**/*.{ts,js}')
   const appCode = app('**/*.{vue,ts,js}')
+  const appSide = [...appCode, ...rootGlobs('modules', '**/*.{vue,ts,js}')]
+  const notOnServer = [...TEST_FILES, '**/*.client.{vue,ts,js}']
   const appVue = [...app('**/*.vue'), ...rootGlobs('modules', '**/*.vue')]
   const components = app('components/**/*.vue')
 
@@ -126,7 +144,7 @@ export function harness(options) {
     {
       // Test helpers mirror the signatures they exercise; table-driven tests branch on purpose.
       name: 'nuxt-harness/tests',
-      files: ['**/*.{test,spec}.{ts,js}'],
+      files: TEST_FILES,
       rules: { 'complexity': 'off', 'max-params': 'off' }
     },
 
@@ -218,6 +236,43 @@ export function harness(options) {
       name: 'nuxt-harness/illegal-states',
       files: components,
       rules: { 'arch/max-boolean-props': 'error' }
+    },
+
+    // ── SSR determinism: what a static gate can still decide ─────────────────
+    // Code that never runs on the server is out of scope: tests (they mock at module scope and
+    // drive fake timers on purpose) and `.client` components and plugins, which Nuxt never loads
+    // there. A `ssr: false` route gets no exemption: its code stays SSR-safe, so SSR can come back.
+    {
+      name: 'nuxt-harness/ssr-determinism',
+      files: appSide,
+      ignores: notOnServer,
+      rules: {
+        // A key the client cannot reproduce misses the payload cache and refetches.
+        'arch/no-nondeterministic-key': 'error',
+        // Locale formatting without a locale, or a date without a time zone, differs between renders.
+        'arch/no-locale-format-in-render': 'error',
+        // Setup runs on the server: a top-level browser read throws or mismatches.
+        'arch/no-browser-api-in-setup': 'error',
+        // A keyless useAsyncData is keyed by its call site: instances with different props collide.
+        'arch/async-data-needs-key': 'warn',
+        // The empty string is reserved by Reka-based selects; it throws while hydrating.
+        ...(o.selectComponents ? { 'arch/no-reserved-item-value': 'error' } : {})
+      }
+    },
+    {
+      // A timer without scope-aware cleanup outlives the component. A plugin and a declared client
+      // singleton live as long as the app, so an app-lifetime listener there is the point.
+      name: 'nuxt-harness/ssr-timers',
+      files: appSide,
+      ignores: [...notOnServer, ...app('plugins/**'), ...o.clientSingletons],
+      rules: { 'arch/timer-needs-scope-dispose': 'warn' }
+    },
+    {
+      // Request data must not live in module scope (one instance per process), app or server side.
+      name: 'nuxt-harness/ssr-module-state',
+      files: [...appSide, ...server, ...shared],
+      ignores: [...notOnServer, ...o.clientSingletons],
+      rules: { 'arch/no-module-mutable-state': 'error' }
     },
 
     // ── Design system: opt-in, configured by the app ─────────────────────────
