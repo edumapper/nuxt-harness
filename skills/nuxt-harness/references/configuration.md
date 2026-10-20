@@ -37,7 +37,7 @@ Keep the config file free of runtime imports from the harness: `fast` can run th
 | `i18n` | `true` when `@nuxtjs/i18n` is a dependency | Bans `navigateTo('/…')` string paths (use `localePath`). The i18n key check runs whenever a locale directory exists. |
 | `authComposables` | `['useUserSession', 'useAuth', 'useSupabaseUser', 'useSupabaseSession']` | Composables whose value gates access. Checking one and redirecting is only allowed in middleware. |
 | `dataComposables` | `[]` | Your own data-layer composables (`useApiQuery`, …). Presenters may not call them, like `useFetch`. |
-| `bodyReaders` | `[]` | Your own request-body readers (e.g. a size-capped `readJsonBody`). Their result must be `.parse()`d, like `readBody`. |
+| `bodyReaders` | `[]` | Your own request-body readers (e.g. a size-capped `readJsonBody`). `arch/no-raw-request-input` treats their calls like `readBody` — the result goes straight into a schema parse — and lets their own implementation read the request. |
 | `allowServerImportsInApp` | `[]` | `~~/server/…` globs that `app/` may import, e.g. `['~~/server/utils/validators/**']`. Prefer moving such code to `shared/`. |
 | `typecheckProjects` | `tools` and `scripts` when they have a `tsconfig.json` | Directories `nuxt typecheck` does not cover (CLIs, one-off scripts). `full` typechecks each with `vue-tsc --noEmit -p <dir>`, and type-aware ESLint lints them. A script that imports a moved app helper otherwise crashes at its first call. |
 | `selectComponents` | `true` when `@nuxt/ui`, `reka-ui`, `radix-vue` or `shadcn-nuxt` is a dependency | Turns on `no-reserved-item-value`: Reka-based selects throw while rendering an item whose value is `''`. |

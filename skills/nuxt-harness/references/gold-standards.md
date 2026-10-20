@@ -278,17 +278,18 @@ declare your own wrappers in `dataComposables` so Presenters can't call them eit
 export default { dataComposables: ['useApiQuery', 'useApiMutation'] }
 ```
 
-### Server routes: validate the body
+### Server routes: every input through a schema
 
 ```ts
 // server/api/products/[id]/favorite.put.ts
 import { z } from 'zod'
 
+const paramsSchema = z.object({ id: z.uuid() })
 const bodySchema = z.object({ favorite: z.boolean() })
 
 export default defineEventHandler(async (event) => {
+  const { id } = await getValidatedRouterParams(event, paramsSchema.parse)
   const { favorite } = await readValidatedBody(event, bodySchema.parse)
-  const id = getRouterParam(event, 'id')
   return setFavorite(id, favorite)
 })
 ```
@@ -302,7 +303,7 @@ export default defineEventHandler(async (event) => {
 | `defineProps<T>()` / `defineEmits<{…}>()` | Always type-based, never runtime syntax |
 | Server reads | Domain composable (`useFetch`/`useAsyncData`/`useQuery`), called from an Orchestrator |
 | Server writes | `$fetch` inside a domain composable, which owns the refresh |
-| Request bodies | `readValidatedBody(event, schema.parse)` |
+| Request input | `readValidatedBody` / `getValidatedQuery` / `getValidatedRouterParams(event, schema.parse)`, or the read passed straight into `schema.parse(…)` |
 | `useRouter()` / `navigateTo()` | Orchestrators, Operators, Pages and middleware only |
 | Composable return type | Explicit (`UseFooReturn`) for anything shared |
 | `console.log` | Forbidden — remove it or use the app's logger |

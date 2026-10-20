@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { consoleHygiene, escapeHatches, i18nKeys, importHygiene, todoMarkers, unvalidatedGetQuery, unvalidatedReadBody } from '../src/checks.js'
+import { consoleHygiene, escapeHatches, i18nKeys, importHygiene, todoMarkers } from '../src/checks.js'
 import { applyBaseline, crap, functionCoverage } from '../src/crap.js'
 
 let root: string | undefined
@@ -21,57 +21,6 @@ function fixture(files: Record<string, string>) {
 afterEach(() => {
   if (root) rmSync(root, { recursive: true, force: true })
   root = undefined
-})
-
-describe('unvalidatedGetQuery', () => {
-  it('flags getQuery(event) used without a schema: a repeated key is an array, a number a string', () => {
-    const findings = unvalidatedGetQuery.run(fixture({ 'server/api/list.get.ts': 'const { page, limit } = getQuery(event)\nreturn list(Number(page), Number(limit))\n' }))
-    expect(findings).toHaveLength(1)
-    expect(findings[0]?.message).toContain('getValidatedQuery')
-  })
-
-  it('accepts getValidatedQuery, an inline parse, and a parse of the variable on the next lines', () => {
-    expect(unvalidatedGetQuery.run(fixture({
-      'server/api/a.get.ts': 'const query = await getValidatedQuery(event, schema.parse)\n',
-      'server/api/b.get.ts': 'const query = schema.parse(getQuery(event))\n',
-      'server/api/c.get.ts': 'const raw = getQuery(event)\nconst query = schema.parse(raw)\n'
-    }))).toEqual([])
-  })
-
-  it('ignores ufo\'s getQuery(url), which parses a URL the app built', () => {
-    expect(unvalidatedGetQuery.run(fixture({ 'server/utils/links.ts': 'const params = getQuery(link.href)\n' }))).toEqual([])
-  })
-})
-
-describe('unvalidatedReadBody', () => {
-  it('flags readBody whose result is never parsed — the body stays untrusted `any`', () => {
-    const findings = unvalidatedReadBody.run(fixture({ 'server/api/x.patch.ts': 'const body = await readBody(event)\n\nreturn save(body)\n' }))
-    expect(findings).toHaveLength(1)
-    expect(findings[0]?.message).toContain('readValidatedBody')
-  })
-
-  it('flags the two-line form when a different variable is parsed', () => {
-    const findings = unvalidatedReadBody.run(fixture({ 'server/api/x.patch.ts': 'const body = await readBody(event)\nconst parsed = schema.safeParse(other)\n' }))
-    expect(findings).toHaveLength(1)
-  })
-
-  it('checks the app\'s own body readers', () => {
-    const ctx = { ...fixture({ 'server/api/x.post.ts': 'const body = await readJsonBody<Input>(event)\nreturn save(body)\n' }), options: { bodyReaders: ['readJsonBody'] } }
-    expect(unvalidatedReadBody.run(ctx)).toHaveLength(1)
-    expect(unvalidatedReadBody.run({ ...ctx, options: {} })).toEqual([])
-    const definition = { ...fixture({ 'server/utils/read-json-body.ts': 'export async function readJsonBody<T>(event: H3Event): Promise<T> {\n' }), options: { bodyReaders: ['readJsonBody'] } }
-    expect(unvalidatedReadBody.run(definition)).toEqual([])
-  })
-
-  it('accepts readValidatedBody and checks server routes inside layers', () => {
-    expect(unvalidatedReadBody.run(fixture({ 'server/api/x.post.ts': 'const body = await readValidatedBody(event, schema.parse)\n' }))).toEqual([])
-    expect(unvalidatedReadBody.run(fixture({ 'layers/base/server/api/x.post.ts': 'const body = await readBody(event)\n' }))).toHaveLength(1)
-  })
-
-  it('accepts the body parsed on the next line', () => {
-    const findings = unvalidatedReadBody.run(fixture({ 'server/api/x.patch.ts': 'const body = await readBody(event)\nconst parsed = schema.safeParse(body)\n' }))
-    expect(findings).toEqual([])
-  })
 })
 
 describe('escapeHatches — a gate the agent can switch off is not a gate', () => {
@@ -161,13 +110,6 @@ describe('comments are not code', () => {
   it('reads template text as text, not as a JS comment', () => {
     const ctx = fixture({ 'app/components/A.vue': '<template>\n  <p>See https://example.com — {{ t(\'missing.key\') }}</p>\n</template>\n', 'i18n/locales/en.json': '{}' })
     expect(lineNumbers(i18nKeys.run(ctx))).toEqual([2])
-  })
-
-  it('ignores readBody in comments, and a commented-out .parse() is not validation', () => {
-    const ctx = fixture({
-      'server/api/x.post.ts': '/**\n * Never call readBody(event) directly.\n */\n// const body = await readBody(event)\nconst body = await readBody(event)\n// const parsed = schema.parse(body)\n'
-    })
-    expect(lineNumbers(unvalidatedReadBody.run(ctx))).toEqual([5])
   })
 
   it('ignores imports in comments', () => {

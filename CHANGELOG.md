@@ -6,11 +6,34 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.10.0]
+
+### Added
+
+- `arch/no-raw-request-input` (`server/**`): `readBody`, `getQuery`, `getRouterParam(s)` and the
+  app's `bodyReaders` only reach the app through a schema — `readValidatedBody` /
+  `getValidatedQuery` / `getValidatedRouterParams(event, schema)`, or the read passed straight
+  into `schema.parse(…)`. Route params are in scope: a malformed id that reaches a `::uuid` cast
+  is a 500.
+
+### Removed
+
+- The "Unvalidated readBody" and "Unvalidated getQuery" static checks. They looked for a
+  `.parse(` within 3 lines of the read, which reported validated code (a parse 12 lines later, a
+  per-field validator) and passed unvalidated code (`JSON.parse(await readBody(event))`, a raw
+  field used before the parse, a `safeParse` whose result is ignored). The rule above reads the
+  code's structure instead. Their entries in `nuxt-harness-baseline.json` are no longer read.
+
 ### Changed
 
 - Requires Node ≥ 24 (`engines`; was ≥ 22). Node 22 is in maintenance until April 2027, and
   Nuxt 4 apps already run 24. CI runs the exact version in `.nvmrc` (24.22.0) instead of the
   runner's cached 24.x, on both the latest and the lowest peers.
+
+### Upgrading
+
+Move raw reads to the validated readers, or pass them straight into the schema; record the rest
+with `npx eslint . --suppress-all` so the count can only go down.
 
 ## [0.9.0]
 

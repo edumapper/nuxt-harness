@@ -196,55 +196,6 @@ export const secretScan = check('Secret scan', function* (ctx) {
   }
 })
 
-// ─── Unvalidated request input ──────────────────────────────────────────────
-// Every readBody() result — or one of the app's own `bodyReaders` — and every getQuery(event)
-// must reach .safeParse()/.parse() on the same line or within the next few lines, otherwise the
-// server trusts `any`. h3's readValidatedBody / getValidatedQuery(event, schema.parse) validate
-// in one call and are never flagged.
-const BODY_PARSE_LOOKAHEAD = 3
-const PARSED = /safeParse\s*\(|\.parse\s*\(/
-// `readJsonBody<Input>(event)`: an optional type argument sits between the name and the call
-const TYPE_ARGS = '(?:<[^>]*>)?\\s*'
-
-/**
- * @param {string} name the check name; baselines are keyed by it
- * @param {(ctx: CheckContext) => string[]} readersOf
- * @param {{ awaited: boolean, call: string, fix: string }} shape `call` matches the opening of the call after the name
- */
-function unvalidatedInput(name, readersOf, { awaited, call, fix }) {
-  return check(name, function* (ctx) {
-    const readers = readersOf(ctx).join('|')
-    // the reader's own definition (`function readJsonBody<T>(`) is not a call
-    const READ = new RegExp(`(?<!function\\s+)\\b(${readers})\\s*${TYPE_ARGS}${call}`)
-    const ASSIGNED = new RegExp(`\\b(?:const|let)\\s+(\\w+)\\s*=\\s*${awaited ? 'await\\s+' : ''}(?:${readers})\\s*${TYPE_ARGS}${call}`)
-    for (const file of ctx.files) {
-      if (!/(?:^|\/)server\//.test(file) || !file.endsWith('.ts')) continue
-      // comments are blanked both ways: a commented-out call is not a read, a commented-out .parse() is not validation
-      const src = codeLines(ctx, file)
-      for (const [i, line] of src.entries()) {
-        const read = READ.exec(line)
-        if (!read || PARSED.test(line)) continue
-        const variable = ASSIGNED.exec(line)?.[1]
-        if (variable) {
-          const parsesVariable = new RegExp(`(?:safeParse|\\.parse)\\s*\\(\\s*${variable}\\s*[,)]`)
-          if (src.slice(i + 1, i + 1 + BODY_PARSE_LOOKAHEAD).some(l => parsesVariable.test(l))) continue
-        }
-        yield { file, line: i + 1, severity: 'error', message: `${read[1]}() not wrapped in .safeParse()/.parse() — use ${fix}: ${line.trim()}` }
-      }
-    }
-  })
-}
-
-export const unvalidatedReadBody = unvalidatedInput('Unvalidated readBody', ctx => ['readBody', ...(ctx.options?.bodyReaders ?? [])], {
-  awaited: true, call: '\\(', fix: 'readValidatedBody(event, schema.parse)'
-})
-
-// h3's getQuery(event): query strings are untrusted too (a repeated key is an array, a number is a string).
-// ufo's getQuery(url) parses a URL the app built itself and is not a request read.
-export const unvalidatedGetQuery = unvalidatedInput('Unvalidated getQuery', () => ['getQuery'], {
-  awaited: false, call: '\\(\\s*(?:event|evt|e)\\s*\\)', fix: 'getValidatedQuery(event, schema.parse)'
-})
-
 // ─── i18n keys ──────────────────────────────────────────────────────────────
 // Static `t('a.b')` / `$t('a.b')` keys must exist in every JSON locale file
 // (`i18n/locales/` — the @nuxtjs/i18n v9+ default — or a root `locales/`).
@@ -289,4 +240,4 @@ export const todoMarkers = check('TODO markers', function* (ctx) {
 })
 
 /** @type {Check[]} */
-export const STATIC_CHECKS = [importHygiene, escapeHatches, consoleHygiene, secretScan, unvalidatedReadBody, unvalidatedGetQuery, i18nKeys, todoMarkers]
+export const STATIC_CHECKS = [importHygiene, escapeHatches, consoleHygiene, secretScan, i18nKeys, todoMarkers]

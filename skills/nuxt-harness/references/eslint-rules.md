@@ -24,6 +24,7 @@ Options are described in [configuration.md](configuration.md).
 | `arch/no-data-calls-in-operator` (R3) <a id="no-data-calls-in-operator"></a> | `Op*.vue` | raw data primitives (`$fetch`, `useFetch`, `useAsyncData`, `useQuery`, …). Call a composable. |
 | `arch/no-reverse-layer` (R4) | components | upward imports: Presenter → Op/Orc, Op → Orc |
 | `arch/no-server-ui-import` | `server/**` | importing Vue components or pages |
+| `arch/no-raw-request-input` <a id="no-raw-request-input"></a> | `server/**` (tests exempt) | `readBody`, `getQuery`, `getRouterParam(s)` and the app's `bodyReaders` outside a schema parse. Use `readValidatedBody` / `getValidatedQuery` / `getValidatedRouterParams(event, schema)`, or pass the read straight into the schema: `schema.safeParse(await readBody(event))`. Decided from the code's structure: a raw value stored in a variable is unvalidated, however close the next `.parse(` is, and `JSON.parse` is not a schema. Not reported: readers with no validated form (`readRawBody`, `readMultipartFormData`), `ufo`'s `getQuery(url)`, and the body of a declared `bodyReaders` function. |
 
 Template rules must use `context.sourceCode.parserServices.defineTemplateBodyVisitor`. A top-level
 `VElement`/`VAttribute` visitor is never called; `test/rules.test.ts` guards every template rule
@@ -131,8 +132,6 @@ file; warnings are never recorded).
 | Escape hatches | `@ts-ignore`/`@ts-nocheck`/`@ts-expect-error`; blanket `eslint-disable`; any disable of a harness rule; other disables without `-- reason` |
 | Console hygiene | `console.log/debug/info` outside tests (`warn`/`error` allowed) |
 | Secret scan | Stripe keys, hardcoded passwords/API keys/tokens, long base64 literals |
-| Unvalidated `readBody` | `readBody()` (and the app's `bodyReaders`) in `server/` whose result isn't `.parse()`d within 3 lines. Prefer `readValidatedBody`. |
-| Unvalidated `getQuery` | h3's `getQuery(event)` in `server/` whose result isn't `.parse()`d within 3 lines: a repeated key arrives as an array and a number as a string. Prefer `getValidatedQuery(event, schema.parse)`. `ufo`'s `getQuery(url)` is not a request read and is not reported. |
 | i18n keys | static `t('a.b')` keys missing from any JSON file in `i18n/locales/` (or `locales/`) |
 | TODO markers | `TODO`/`FIXME`/`HACK` (warning) |
 
