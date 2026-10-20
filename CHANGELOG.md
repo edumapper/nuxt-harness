@@ -24,10 +24,10 @@ All notable changes to this project are documented here. The format follows
   - `arch/async-data-needs-key` (warn): a keyless `useAsyncData(handler)` that reads props or the
     route, so every instance of the component shares one payload entry.
   - `arch/timer-needs-scope-dispose` (warn): a timer or listener with no scope-aware cleanup.
-- Options: `clientOnly` (globs of files that never run on the server, e.g. `ssr: false` routes),
-  `clientSingletons` (modules that deliberately keep one browser-side instance) and
-  `selectComponents`. Test files and `*.client.*` files are exempt from the SSR rules, and
-  `plugins/` from the timer rule.
+- Options: `clientSingletons` (modules that deliberately keep one browser-side instance) and
+  `selectComponents`. Test files and `*.client.*` files, which Nuxt never loads on the server,
+  are exempt from the SSR rules, and `plugins/` from the timer rule. Pages under a `ssr: false`
+  route rule are not exempt: they stay SSR-safe.
 
 ### Changed
 
@@ -39,9 +39,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Upgrading
 
-The new rules report existing code. Fix real findings; list `ssr: false` pages in `clientOnly`
-and deliberate browser-only singletons in `clientSingletons` (with the reason next to each
-entry); record the rest with `npx eslint . --suppress-all`.
+The new rules report existing code. Fix real findings; list deliberate browser-only singletons in
+`clientSingletons` (with the reason next to each entry); record the rest with
+`npx eslint . --suppress-all`, so the count can only go down.
 
 ## [0.6.0]
 

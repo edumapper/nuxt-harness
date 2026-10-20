@@ -111,7 +111,7 @@ export function harness(options) {
   const shared = rootGlobs('shared', '**/*.{ts,js}')
   const appCode = app('**/*.{vue,ts,js}')
   const appSide = [...appCode, ...rootGlobs('modules', '**/*.{vue,ts,js}')]
-  const notOnServer = [...TEST_FILES, '**/*.client.{vue,ts,js}', ...o.clientOnly]
+  const notOnServer = [...TEST_FILES, '**/*.client.{vue,ts,js}']
   const appVue = [...app('**/*.vue'), ...rootGlobs('modules', '**/*.vue')]
   const components = app('components/**/*.vue')
 
@@ -240,8 +240,8 @@ export function harness(options) {
 
     // ── SSR determinism: what a static gate can still decide ─────────────────
     // Code that never runs on the server is out of scope: tests (they mock at module scope and
-    // drive fake timers on purpose), `.client` components and plugins, and the app's `clientOnly`
-    // globs (routes with `ssr: false`).
+    // drive fake timers on purpose) and `.client` components and plugins, which Nuxt never loads
+    // there. A `ssr: false` route gets no exemption: its code stays SSR-safe, so SSR can come back.
     {
       name: 'nuxt-harness/ssr-determinism',
       files: appSide,

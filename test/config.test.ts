@@ -132,11 +132,10 @@ describe('SSR rules — scoped to the render path', () => {
     expect(await lint(withUi, 'app/utils/filters.ts', items)).toEqual(['arch/no-reserved-item-value'])
   })
 
-  it('skips code that never runs on the server: .client files and clientOnly globs', async () => {
+  it('skips .client files, which Nuxt never loads on the server, and nothing else', async () => {
     const cwd = project({ 'app/app.vue': '' })
     const read = 'export const width = window.innerWidth\n'
     expect(await lint(cwd, 'app/pages/admin/size.ts', read)).toEqual(['arch/no-browser-api-in-setup'])
-    expect(await lint(cwd, 'app/pages/admin/size.ts', read, { clientOnly: ['app/pages/admin/**'] })).toEqual([])
     expect(await lint(cwd, 'app/utils/size.client.ts', read)).toEqual([])
   })
 

@@ -27,7 +27,6 @@ import { pathToFileURL } from 'node:url'
  * @property {string[]} [bodyReaders] The app's own request-body readers (e.g. a size-capped `readJsonBody`), checked like `readBody`.
  * @property {string[]} [allowServerImportsInApp] `~~/server/…` globs that `app/` may import (e.g. shared validators).
  * @property {boolean} [selectComponents] The app renders Reka-based selects (Nuxt UI, reka-ui, radix-vue): turns on `no-reserved-item-value`. Default: detected from the dependencies.
- * @property {string[]} [clientOnly] Root-relative globs of files that never run on the server (pages under a `ssr: false` route rule, their components). Exempt from the SSR-determinism rules.
  * @property {string[]} [clientSingletons] Root-relative globs of modules that deliberately hold one browser-side instance for the app's lifetime (written only in the browser). Exempt from `no-module-mutable-state` and `timer-needs-scope-dispose`.
  * @property {false | DesignSystemOptions} [designSystem] Opt-in design-system rules. Default `false`.
  */
@@ -103,7 +102,6 @@ export function resolveOptions(options = {}) {
     bodyReaders: options.bodyReaders ?? [],
     allowServerImportsInApp: options.allowServerImportsInApp ?? [],
     selectComponents: options.selectComponents ?? SELECT_LIBRARIES.some(name => name in deps),
-    clientOnly: options.clientOnly ?? [],
     clientSingletons: options.clientSingletons ?? [],
     designSystem: ds
       ? {

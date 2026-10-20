@@ -87,8 +87,9 @@ What the server renders must be what the client renders, and what the client fet
 findable in the payload. These rules catch the classes that SSR HTML, `curl` and `nuxt typecheck`
 cannot see - the page returns 200 with correct HTML and breaks in a browser.
 
-Code that never runs on the server is exempt from every rule below: test files, `*.client.vue` /
-`*.client.ts` files, and the `clientOnly` globs (pages under a `ssr: false` route rule).
+Code that never runs on the server is exempt from every rule below: test files and `*.client.vue` /
+`*.client.ts` files, which Nuxt never loads there. Pages under a `ssr: false` route rule are not
+exempt: keep them SSR-safe, so turning SSR back on is a config change, not a rewrite.
 
 | Rule | Files | Forbids |
 |---|---|---|
