@@ -19,9 +19,19 @@ import { STATIC_CHECKS } from './checks.js'
 import { loadConfig, resolveOptions, sourcePattern } from './config.js'
 import { applyBaseline, baselineFrom, crapFindings } from './crap.js'
 import { lint } from './lint.js'
+import { eslintFindings, withoutDuplicates } from './tool-report.js'
 
 /** @typedef {import('./checks.js').Finding} Finding */
 /** @typedef {{ name: string, status: 'pass' | 'fail' | 'skip', durationMs: number, findings: Finding[], note?: string }} CheckReport */
+
+const HARNESS_ESLINT = 'ESLint (harness rules)'
+const PROJECT_ESLINT = 'ESLint (project, type-aware)'
+
+/** The project step without what the harness step already reported. @param {CheckReport} report @param {Finding[]} reported @returns {CheckReport} */
+function dedupe (report, reported) {
+  const findings = withoutDuplicates(report.findings, reported)
+  return { ...report, findings, status: report.status === 'fail' && findings.length === 0 ? 'pass' : report.status }
+}
 
 const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
 const BASELINE_FILE = 'nuxt-harness-baseline.json'
@@ -113,7 +123,7 @@ function fastChecks(root, files, options) {
   const ctx = { root, files, options }
   return Promise.all([
     ...STATIC_CHECKS.map(c => timed(c.name, () => c.run(ctx))),
-    timed('ESLint (harness rules)', () => lint(root, files, options))
+    timed(HARNESS_ESLINT, () => lint(root, files, options))
   ])
 }
 
@@ -171,7 +181,7 @@ function packageManager(root) {
 }
 
 /**
- * @typedef {{ name: string, script?: string, bin: string, args: string[], when?: string[] }} ToolStep
+ * @typedef {{ name: string, script?: string, bin: string, args: string[], when?: string[], json?: 'eslint' }} ToolStep
  *
  * The app's own toolchain. Each step runs its package.json script when the app
  * defines one (the app knows its globs), otherwise the bare binary. A step with
@@ -186,7 +196,8 @@ function toolSteps(srcDir, typecheckProjects) {
     { name: 'TypeScript (nuxt typecheck)', bin: 'nuxt', args: ['typecheck'] },
     // A CLI that imports a moved app helper crashes at its first call: nuxt typecheck never sees it.
     ...typecheckProjects.map(dir => ({ name: `TypeScript (${dir}/)`, bin: 'vue-tsc', args: ['--noEmit', '-p', dir] })),
-    { name: 'ESLint (project, type-aware)', bin: 'eslint', args: ['.', '--max-warnings', '0'] },
+    // JSON: one finding per message with its file, line and rule (see tool-report.js).
+    { name: PROJECT_ESLINT, bin: 'eslint', args: ['.', '--max-warnings', '0', '--format', 'json'], json: 'eslint' },
     { name: 'Dead code (knip)', bin: 'knip', args: ['--reporter', 'compact'], when: ['knip.json', 'knip.jsonc', 'knip.config.ts'] },
     { name: 'Spelling (cspell)', script: 'check:spell', bin: 'cspell', args: [appGlob, 'server/**/*.ts', 'shared/**/*.ts', '--no-progress'], when: ['cspell.json', 'cspell.config.yaml', '.cspell.json'] },
     { name: 'Duplicates (jscpd)', bin: 'jscpd', args: ['--config', '.jscpd.json'], when: ['.jscpd.json'] },
@@ -220,10 +231,13 @@ function runTool(root, step) {
   return new Promise((resolve) => {
     const child = spawn(cmd, args, { cwd: root, env: { ...process.env, FORCE_COLOR: '0', NO_COLOR: '1' } })
     let out = ''
-    child.stdout.on('data', d => (out += d))
+    let stdout = ''
+    child.stdout.on('data', d => { out += d; stdout += d })
     child.stderr.on('data', d => (out += d))
     child.on('close', (code) => {
       if (code === 0) return resolve(done('pass', []))
+      const parsed = step.json === 'eslint' ? eslintFindings(stdout, root, step.name) : undefined
+      if (parsed) return resolve(done(parsed.length > 0 ? 'fail' : 'pass', parsed))
       const outLines = out.split('\n').map(l => l.trimEnd()).filter(Boolean)
       const signal = outLines.filter(l => SIGNAL.test(l))
       const picked = (signal.length > 0 ? signal : outLines.slice(-MAX_PRINTED))
@@ -321,7 +335,10 @@ export async function runGate(mode, { root, files, all, updateBaseline, config, 
   /** @type {CheckReport[]} */
   let checks = await fastChecks(root, selected, options)
   if (mode === 'full') {
-    const tools = await Promise.all(toolSteps(srcDir, typecheckProjects).map(step => runTool(root, step)))
+    const harnessFindings = checks.find(c => c.name === HARNESS_ESLINT)?.findings ?? []
+    // The app's ESLint config includes the harness rules: report each problem once.
+    const tools = (await Promise.all(toolSteps(srcDir, typecheckProjects).map(step => runTool(root, step))))
+      .map(t => t.name === PROJECT_ESLINT ? dedupe(t, harnessFindings) : t)
     // CRAP joins complexity with the coverage the vitest step just wrote.
     const crapCheck = await timed(CRAP_CHECK, () => crapFindings(root, selected, options))
     checks = [...checks, ...tools, crapCheck]

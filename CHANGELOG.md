@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.10.1]
+
+### Fixed
+
+- `full` no longer reports the harness findings twice. The app's ESLint config includes the
+  harness rules, so its step repeated every harness problem, and its text output was read line by
+  line: each file header and the summary became an "error" with no file, line or rule, and warn-level
+  harness rules (`timer-needs-scope-dispose`, `async-data-needs-key`) turned into errors that failed
+  the gate. The step now reads ESLint's JSON output (one finding per message, with file, line and
+  rule) and drops what "ESLint (harness rules)" already reported. On schoolyard: 96 errors → 52, the
+  real count; a warn-level harness rule is again only a warning. The app's own warnings still fail
+  the step, as `--max-warnings 0` intends.
+
 ## [0.10.0]
 
 ### Added
