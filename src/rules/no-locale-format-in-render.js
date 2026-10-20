@@ -2,74 +2,122 @@
 /**
  * ESLint Rule: no-locale-format-in-render
  *
- * Flags locale-dependent formatting in a template expression: `toLocaleString`,
- * `toLocaleDateString`, `toLocaleTimeString`, `Intl.*`.
+ * Flags locale formatting in the render path whose output depends on the machine:
+ *   - no locale argument: Node formats with the server's default locale, the browser with the
+ *     user's, so the two renders differ;
+ *   - a date or time without a `timeZone` option: the server usually runs in UTC and the user
+ *     does not, so the hour (and near midnight, the day) differs between the two renders.
  *
- * The template renders twice - once in Node, once in the browser - and the two runtimes
- * ship different ICU data. Grouping separators, month names and time zones can differ, so
- * the client render disagrees with the server HTML. In production Vue does not warn about
- * a hydrated text-node mismatch; it just re-renders and the user sees a flicker.
+ * A number formatted with an explicit locale (`n.toLocaleString(locale)`,
+ * `new Intl.NumberFormat('fr-FR')`) is deterministic: Node and browsers ship the same CLDR
+ * data, so it is not reported.
+ *
+ * The render path is a template expression (event handlers excluded), a top-level setup
+ * statement, or a `computed` callback. Other functions (handlers, `onMounted`, actions) run
+ * in the browser after hydration and are not reported. Production Vue does not warn about a
+ * hydrated text mismatch, which is why this needs a rule.
  */
 
 import { docsUrl } from './docs.js'
+
+const LOCALE_METHODS = new Set(['toLocaleString', 'toLocaleDateString', 'toLocaleTimeString'])
+const INTL_DATE = new Set(['DateTimeFormat'])
+const INTL_OTHER = new Set(['NumberFormat', 'RelativeTimeFormat', 'PluralRules', 'ListFormat'])
+const DATE_OPTIONS = new Set(['dateStyle', 'timeStyle', 'year', 'month', 'day', 'weekday', 'hour', 'minute', 'second', 'era', 'timeZoneName'])
+const FUNCTION_TYPES = new Set(['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression'])
+
+/** @param {any} node */
+const keysOf = node => node?.type === 'ObjectExpression'
+  ? node.properties.map((/** @type {any} */ p) => p.key?.name ?? p.key?.value).filter(Boolean)
+  : []
+
+/** @param {any} node */
+const isUndefined = node => !node || (node.type === 'Identifier' && node.name === 'undefined')
+
+/**
+ * The formatting call `node` makes, or undefined when it is not one.
+ * @param {any} node @returns {{ what: string, date: boolean, args: any[] } | undefined}
+ */
+function formatting (node) {
+  const callee = node.callee
+  if (node.type === 'CallExpression' && callee?.type === 'MemberExpression') {
+    const method = callee.property?.name
+    if (LOCALE_METHODS.has(method)) {
+      const isNewDate = callee.object?.type === 'NewExpression' && callee.object.callee?.name === 'Date'
+      const date = method !== 'toLocaleString' || isNewDate || keysOf(node.arguments[1]).some((/** @type {string} */ k) => DATE_OPTIONS.has(k))
+      return { what: method, date, args: node.arguments }
+    }
+  }
+  // new Intl.X(locale, options) and Intl.X(locale, options)
+  if (callee?.type === 'MemberExpression' && callee.object?.type === 'Identifier' && callee.object.name === 'Intl') {
+    const name = callee.property?.name
+    if (INTL_DATE.has(name) || INTL_OTHER.has(name)) return { what: `Intl.${name}`, date: INTL_DATE.has(name), args: node.arguments }
+  }
+  return undefined
+}
+
+/** @param {{ date: boolean, args: any[] }} call @returns {'noLocale' | 'noTimeZone' | undefined} */
+function divergence ({ date, args }) {
+  if (isUndefined(args[0])) return 'noLocale'
+  if (date && !keysOf(args[1]).includes('timeZone')) return 'noTimeZone'
+  return undefined
+}
+
+/** A `computed(() => …)` callback runs during render. @param {any} fn */
+const isComputedCallback = fn =>
+  fn.parent?.type === 'CallExpression' && fn.parent.callee?.type === 'Identifier' && fn.parent.callee.name === 'computed' && fn.parent.arguments[0] === fn
 
 /** @type {import('eslint').Rule.RuleModule} */
 export default {
   meta: {
     type: 'problem',
-    docs: { description: 'Disallow locale-dependent formatting inside templates' },
+    docs: { description: 'Disallow machine-dependent locale formatting in the render path' },
     schema: [],
     messages: {
-      localeFormat: [
-        '❌ {{what}} in a template expression',
-        '💡 The template renders on the server (Node) and again in the browser, with different ICU data: grouping, month names and time zones can differ, and Vue does not warn about a hydrated text mismatch in production.',
-        '🛠 Format in one place and pass the string, or format with the app formatter once and render the result; if the value is inherently client-only, render it after mount.',
+      noLocale: [
+        '❌ {{what}} without a locale in the render path',
+        '💡 The server formats with its own default locale and the browser with the user\'s, so the SSR text and the hydrated text differ, and production Vue does not warn about it.',
+        '🛠 Pass the app locale: value.toLocaleString(locale.value), new Intl.NumberFormat(locale.value). Or format after mount if the value is client-only.',
+        '📖 ' + docsUrl('no-locale-format-in-render')
+      ].join('\n'),
+      noTimeZone: [
+        '❌ {{what}} formats a date without a timeZone in the render path',
+        '💡 The server usually runs in UTC and the user does not: the hour, and near midnight the day, differ between the SSR text and the hydrated text.',
+        '🛠 Pass the zone the date belongs to: { timeZone: \'Europe/Paris\' }, or format after mount for the user\'s local time.',
         '📖 ' + docsUrl('no-locale-format-in-render')
       ].join('\n')
     }
   },
   create (context) {
-    const services = context.sourceCode.parserServices
-    const LOCALE_CALL = /\b(toLocaleString|toLocaleDateString|toLocaleTimeString)\s*\(/
-    const INTl_MEMBER = /\bIntl\.(DateTimeFormat|NumberFormat|RelativeTimeFormat|PluralRules)\b/
-    const FUNCTION_TYPES = new Set(['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression', 'MethodDefinition', 'PropertyDefinition', 'StaticBlock'])
+    const { sourceCode } = context
+    /** @param {any} node */
+    function check (node) {
+      const call = formatting(node)
+      const messageId = call && divergence(call)
+      if (messageId && call) context.report({ node, messageId, data: { what: call.what } })
+    }
 
-    // Script side: a top-level setup statement formats a value the template then renders, which
-    // is the same Node-vs-browser divergence. Calls inside functions (event handlers, actions) are
-    // client-only by construction and are not reported.
     const scriptVisitor = {
       /** @param {any} node */
-      Program (node) {
-        /** @param {any} current */
-        function walk (current) {
-          if (!current || typeof current.type !== 'string') return
-          if (FUNCTION_TYPES.has(current.type)) return
-          if (current.type === 'CallExpression' || current.type === 'NewExpression') {
-            const text = context.sourceCode.getText(current)
-            const match = text.match(LOCALE_CALL) || text.match(INTl_MEMBER)
-            if (match) context.report({ node: current, messageId: 'localeFormat', data: { what: match[0].replace(/\s*\($/, '') } })
-            return
-          }
-          for (const key of Object.keys(current)) {
-            if (key === 'parent' || key === 'templateBody') continue
-            const value = current[key]
-            if (Array.isArray(value)) for (const child of value) walk(child)
-            else if (value && typeof value === 'object' && typeof value.type === 'string') walk(value)
-          }
-        }
-        walk(node)
+      'CallExpression, NewExpression' (node) {
+        const functions = sourceCode.getAncestors(node).filter(a => FUNCTION_TYPES.has(a.type))
+        if (functions.every(isComputedCallback)) check(node)
       }
     }
 
-    if (!services.defineTemplateBodyVisitor) return scriptVisitor
+    const services = sourceCode.parserServices
+    if (!services?.defineTemplateBodyVisitor) return scriptVisitor
     return services.defineTemplateBodyVisitor({
       /** @param {any} node */
-      VExpressionContainer (node) {
-        if (!node.expression) return
-        const text = context.sourceCode.getText(node.expression)
-        const match = text.match(/\b(toLocaleString|toLocaleDateString|toLocaleTimeString)\s*\(/) || text.match(/\bIntl\.(DateTimeFormat|NumberFormat|RelativeTimeFormat|PluralRules)\b/)
-        if (!match) return
-        context.report({ node, messageId: 'localeFormat', data: { what: match[0].replace(/\s*\($/, '') } })
+      'CallExpression, NewExpression' (node) {
+        // v-on handlers run on user events, in the browser.
+        for (let parent = node.parent; parent; parent = parent.parent) {
+          if (parent.type === 'VAttribute') {
+            if (parent.directive && parent.key?.name?.name === 'on') return
+            break
+          }
+        }
+        check(node)
       }
     }, scriptVisitor)
   }

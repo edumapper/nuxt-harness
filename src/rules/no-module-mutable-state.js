@@ -10,7 +10,8 @@
  * cross-request state: whatever request N+1 reads is what request N wrote. A value derived
  * once from a file and never reassigned is fine - that is an immutable cache. A module-scope
  * `computed` holds no state of its own: it derives from a source that is reported instead, so one
- * singleton is one finding.
+ * singleton is one finding. An assignment inside an `if (import.meta.client)` branch never runs
+ * on the server, so it does not count (a client-side lazy cache).
  *
  * SFC files are skipped: the top level of <script setup> is setup scope (one per instance),
  * which is exactly where component state belongs. This rule targets `app/composables`,
@@ -43,6 +44,17 @@ export default {
     }
   },
   create (context) {
+    /** In the consequent of `if (import.meta.client)` (or the alternate of `if (import.meta.server)`). @param {any} node */
+    const clientOnly = node => {
+      const chain = [...context.sourceCode.getAncestors(node), node]
+      return chain.some((a, i) => {
+        if (a.type !== 'IfStatement') return false
+        const test = context.sourceCode.getText(a.test).replace(/\s+/g, '')
+        return (test === 'import.meta.client' && chain[i + 1] === a.consequent) ||
+          (test === 'import.meta.server' && chain[i + 1] === a.alternate)
+      })
+    }
+
     // In an SFC the top-level <script setup> body is setup scope (per instance), not module scope.
     if (context.filename && context.filename.endsWith('.vue')) return {}
 
@@ -74,6 +86,7 @@ export default {
       },
       /** @param {any} node */
       AssignmentExpression (node) {
+        if (clientOnly(node)) return
         const target = node.left
         const name = target?.type === 'Identifier'
           ? target.name

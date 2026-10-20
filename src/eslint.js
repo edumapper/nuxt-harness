@@ -29,13 +29,13 @@ import noPresenterInPage from './rules/no-presenter-in-page.js'
 import noProvideInject from './rules/no-provide-inject.js'
 import noReverseLayerImport from './rules/no-reverse-layer-import.js'
 import noServerUiImport from './rules/no-server-ui-import.js'
+import asyncDataNeedsKey from './rules/async-data-needs-key.js'
 import noBrowserApiInSetup from './rules/no-browser-api-in-setup.js'
 import noLocaleFormatInRender from './rules/no-locale-format-in-render.js'
 import noModuleMutableState from './rules/no-module-mutable-state.js'
 import noNondeterministicKey from './rules/no-nondeterministic-key.js'
 import noReservedItemValue from './rules/no-reserved-item-value.js'
 import timerNeedsScopeDispose from './rules/timer-needs-scope-dispose.js'
-import useFetchNeedsKey from './rules/use-fetch-needs-key.js'
 import noSmartCallsInPresenter from './rules/no-smart-calls-in-presenter.js'
 
 // ESLint flat config requires plugin objects to be referentially identical
@@ -62,7 +62,7 @@ export const arch = {
     'no-reverse-layer': noReverseLayerImport,
     'no-reserved-item-value': noReservedItemValue,
     'no-nondeterministic-key': noNondeterministicKey,
-    'use-fetch-needs-key': useFetchNeedsKey,
+    'async-data-needs-key': asyncDataNeedsKey,
     'no-locale-format-in-render': noLocaleFormatInRender,
     'no-browser-api-in-setup': noBrowserApiInSetup,
     'timer-needs-scope-dispose': timerNeedsScopeDispose,
@@ -111,6 +111,7 @@ export function harness(options) {
   const shared = rootGlobs('shared', '**/*.{ts,js}')
   const appCode = app('**/*.{vue,ts,js}')
   const appSide = [...appCode, ...rootGlobs('modules', '**/*.{vue,ts,js}')]
+  const notOnServer = [...TEST_FILES, '**/*.client.{vue,ts,js}', ...o.clientOnly]
   const appVue = [...app('**/*.vue'), ...rootGlobs('modules', '**/*.vue')]
   const components = app('components/**/*.vue')
 
@@ -238,23 +239,24 @@ export function harness(options) {
     },
 
     // ── SSR determinism: what a static gate can still decide ─────────────────
-    // Render-path rules: only app-side code renders. Tests are excluded throughout: they mock at
-    // module scope and drive fake timers on purpose, and none of it runs in SSR.
+    // Code that never runs on the server is out of scope: tests (they mock at module scope and
+    // drive fake timers on purpose), `.client` components and plugins, and the app's `clientOnly`
+    // globs (routes with `ssr: false`).
     {
       name: 'nuxt-harness/ssr-determinism',
       files: appSide,
-      ignores: TEST_FILES,
+      ignores: notOnServer,
       rules: {
-        // The empty string is reserved by select-like components; it throws while hydrating.
-        'arch/no-reserved-item-value': 'error',
         // A key the client cannot reproduce misses the payload cache and refetches.
         'arch/no-nondeterministic-key': 'error',
-        // Locale formatting differs between Node and the browser inside the render path.
+        // Locale formatting without a locale, or a date without a time zone, differs between renders.
         'arch/no-locale-format-in-render': 'error',
         // Setup runs on the server: a top-level browser read throws or mismatches.
         'arch/no-browser-api-in-setup': 'error',
-        // Parameterised requests need a key so hydration replays the right entry.
-        'arch/use-fetch-needs-key': 'warn'
+        // A keyless useAsyncData is keyed by its call site: instances with different props collide.
+        'arch/async-data-needs-key': 'warn',
+        // The empty string is reserved by Reka-based selects; it throws while hydrating.
+        ...(o.selectComponents ? { 'arch/no-reserved-item-value': 'error' } : {})
       }
     },
     {
@@ -262,14 +264,14 @@ export function harness(options) {
       // singleton live as long as the app, so an app-lifetime listener there is the point.
       name: 'nuxt-harness/ssr-timers',
       files: appSide,
-      ignores: [...TEST_FILES, ...app('plugins/**'), ...o.clientSingletons],
+      ignores: [...notOnServer, ...app('plugins/**'), ...o.clientSingletons],
       rules: { 'arch/timer-needs-scope-dispose': 'warn' }
     },
     {
       // Request data must not live in module scope (one instance per process), app or server side.
       name: 'nuxt-harness/ssr-module-state',
       files: [...appSide, ...server, ...shared],
-      ignores: [...TEST_FILES, ...o.clientSingletons],
+      ignores: [...notOnServer, ...o.clientSingletons],
       rules: { 'arch/no-module-mutable-state': 'error' }
     },
 

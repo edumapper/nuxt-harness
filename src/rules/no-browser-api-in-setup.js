@@ -8,11 +8,18 @@
  * Setup runs on the server during SSR. A top-level read either throws (500 for every
  * visitor) or renders a different value than the client, which is the mismatch class this
  * rule exists to prevent. Move the work into `onMounted`, or guard the branch.
+ *
+ * Only references that resolve to the browser global are reported (scope analysis): a
+ * property named `document` (`hit.document.title`, `{ document: … }`, an interface field) or a
+ * local variable that shadows the name is not the global. Templates are not checked: they
+ * cannot reach `window` or `document` at all. `typeof window`, and branches guarded by
+ * `import.meta.client` / `import.meta.server` / `typeof` (`if`, `? :`, `&&`), are allowed.
  */
 
 import { docsUrl } from './docs.js'
 
 const GLOBALS = new Set(['window', 'document', 'localStorage', 'sessionStorage', 'navigator'])
+const GUARD = /import\.meta\.(client|server)|\btypeof\b/
 const FUNCTION_TYPES = new Set([
   'FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression',
   'PropertyDefinition', 'MethodDefinition', 'StaticBlock'
@@ -34,61 +41,33 @@ export default {
     }
   },
   create (context) {
-    /** @type {Set<any>} */
-    const guarded = new Set()
-    /** @param {any} node */
-    function markGuardedText (node) {
-      const test = node.test
-      if (!test) return
-      const text = context.sourceCode.getText(test)
-      if (text.includes('import.meta.client') || text.includes('import.meta.server') || text.startsWith('typeof ')) {
-        for (const child of node.consequent ? [node.consequent] : []) guarded.add(child)
-        if (node.alternate) guarded.add(node.alternate)
-      }
-    }
+    const { sourceCode } = context
 
-    const program = context.sourceCode.ast
-    // collect guarded blocks first (they may appear after the read in source order)
-    /** @type {any[]} */
-    const stack = [program]
-    while (stack.length > 0) {
-      const node = stack.pop()
-      if (!node || typeof node.type !== 'string') continue
-      if (node.type === 'IfStatement') markGuardedText(node)
-      for (const key of Object.keys(node)) {
-        if (key === 'parent') continue
-        const value = node[key]
-        if (Array.isArray(value)) stack.push(...value)
-        else if (value && typeof value === 'object' && typeof value.type === 'string') stack.push(value)
-      }
+    /** Inside the guarded branch of an `if`, `? :` or `&&` whose test is a client/server check. @param {any} node @param {any[]} ancestors */
+    function guarded (node, ancestors) {
+      const chain = [...ancestors, node]
+      return chain.some((a, i) => {
+        const child = chain[i + 1]
+        if (!child) return false
+        if (a.type === 'IfStatement' || a.type === 'ConditionalExpression') return child !== a.test && GUARD.test(sourceCode.getText(a.test))
+        return a.type === 'LogicalExpression' && a.operator === '&&' && child === a.right && GUARD.test(sourceCode.getText(a.left))
+      })
     }
 
     return {
-      /** @param {any} node */
-      Program (node) {
-        /** @param {any} current @param {boolean} inFunction @param {boolean} inGuard */
-        function walk (current, inFunction, inGuard) {
-          if (!current || typeof current.type !== 'string') return
-          if (FUNCTION_TYPES.has(current.type)) return
-          const nowInGuard = inGuard || guarded.has(current)
-          if (!inFunction && !nowInGuard && current.type === 'Identifier' && GLOBALS.has(current.name)) {
-            const parent = current.parent
-            const isDeclarationOrProperty =
-              (parent?.type === 'VariableDeclarator' && parent.id === current) ||
-              ((parent?.type === 'MemberExpression' || parent?.type === 'Property') && parent.property === current && parent.type === 'Property')
-            if (!isDeclarationOrProperty) {
-              context.report({ node: current, messageId: 'browserApi', data: { name: current.name } })
-              return
-            }
-          }
-          for (const key of Object.keys(current)) {
-            if (key === 'parent') continue
-            const value = current[key]
-            if (Array.isArray(value)) for (const child of value) walk(child, inFunction, nowInGuard)
-            else if (value && typeof value === 'object' && typeof value.type === 'string') walk(value, inFunction, nowInGuard)
-          }
+      /** @param {any} program */
+      'Program:exit' (program) {
+        const global = sourceCode.getScope(program)
+        // Unresolved references, plus references to the name when the config declares browser globals.
+        const refs = [...global.through, ...[...GLOBALS].flatMap(name => global.set.get(name)?.references ?? [])]
+        for (const ref of refs.sort((a, b) => a.identifier.range[0] - b.identifier.range[0])) {
+          const id = ref.identifier
+          if (!GLOBALS.has(id.name)) continue
+          if (id.parent?.type === 'UnaryExpression' && id.parent.operator === 'typeof') continue
+          const ancestors = sourceCode.getAncestors(id)
+          if (ancestors.some(a => FUNCTION_TYPES.has(a.type)) || guarded(id, ancestors)) continue
+          context.report({ node: id, messageId: 'browserApi', data: { name: id.name } })
         }
-        walk(node, false, false)
       }
     }
   }

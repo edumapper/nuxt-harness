@@ -124,6 +124,22 @@ describe('SSR rules — scoped to the render path', () => {
     expect(await lint(cwd, 'server/utils/session.ts', 'export const users = reactive({})\n')).toEqual(['arch/no-module-mutable-state'])
   })
 
+  it('turns no-reserved-item-value on only when a Reka-based select library is installed', async () => {
+    const items = 'export const items = [{ label: \'All\', value: \'\' }]\n'
+    const plain = project({ 'app/app.vue': '', 'package.json': '{}' })
+    expect(await lint(plain, 'app/utils/filters.ts', items)).toEqual([])
+    const withUi = project({ 'app/app.vue': '', 'package.json': '{"dependencies":{"@nuxt/ui":"4.0.0"}}' })
+    expect(await lint(withUi, 'app/utils/filters.ts', items)).toEqual(['arch/no-reserved-item-value'])
+  })
+
+  it('skips code that never runs on the server: .client files and clientOnly globs', async () => {
+    const cwd = project({ 'app/app.vue': '' })
+    const read = 'export const width = window.innerWidth\n'
+    expect(await lint(cwd, 'app/pages/admin/size.ts', read)).toEqual(['arch/no-browser-api-in-setup'])
+    expect(await lint(cwd, 'app/pages/admin/size.ts', read, { clientOnly: ['app/pages/admin/**'] })).toEqual([])
+    expect(await lint(cwd, 'app/utils/size.client.ts', read)).toEqual([])
+  })
+
   it('lets a plugin hold an app-lifetime listener, not a composable', async () => {
     const cwd = project({ 'app/app.vue': '' })
     expect(await lint(cwd, 'app/plugins/guard.client.ts', listener)).toEqual([])

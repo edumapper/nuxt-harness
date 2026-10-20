@@ -12,6 +12,11 @@
  * `undefined` at the query/URL boundary instead.
  *
  * Template object literals are not reported: a native `<option value="">` is legitimate.
+ *
+ * Only an element of an array literal is an item: a single `{ value: '' }` object is a form
+ * model or a prop default, not a list a select renders. A blank row whose `label` is also
+ * `''` is data (a new, empty entry), not an option. The rule is on by default only when the
+ * app depends on a Reka-based library (`selectComponents` option).
  */
 
 const DOC = 'https://github.com/edumapper/nuxt-harness/blob/main/skills/nuxt-harness/references/eslint-rules.md#no-reserved-item-value'
@@ -40,6 +45,10 @@ export default {
         if (name !== 'value') return
         const value = node.value
         if (!value || value.type !== 'Literal' || value.value !== '') return
+        const item = node.parent
+        if (item?.parent?.type !== 'ArrayExpression') return
+        const label = item.properties.find((/** @type {any} */ p) => p.type === 'Property' && (p.key?.name ?? p.key?.value) === 'label')
+        if (label?.value?.type === 'Literal' && label.value.value === '') return
 
         // Skip template-side literals: a native <option value=""> is legitimate.
         for (const ancestor of context.sourceCode.getAncestors(node)) {
