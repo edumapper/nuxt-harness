@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Requires Node ≥ 24 (`engines`; was ≥ 22). Node 22 is in maintenance until April 2027, and
+  Nuxt 4 apps already run 24. CI runs the exact version in `.nvmrc` (24.22.0) instead of the
+  runner's cached 24.x, on both the latest and the lowest peers.
+
 ## [0.9.0]
 
 ### Added
