@@ -40,7 +40,7 @@
     "LICENSE"
   ],
   "engines": {
-    "node": ">=24"
+    "node": ">=24.22.1"
   },
   "publishConfig": {
     "access": "public"
@@ -63,5 +63,6 @@
     "typescript": "5.9.3",
     "vitest": "4.1.11",
     "vue-eslint-parser": "10.4.1"
-  }
+  },
+  "packageManager": "bun@1.4.4"
 }
