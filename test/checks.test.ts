@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { consoleHygiene, escapeHatches, i18nKeys, importHygiene, todoMarkers } from '../src/checks.js'
-import { applyBaseline, crap, functionCoverage } from '../src/crap.js'
+import { applyBaseline } from '../src/baseline.js'
 
 let root: string | undefined
 
@@ -60,25 +60,9 @@ describe('i18nKeys', () => {
   })
 })
 
-describe('CRAP', () => {
-  it('equals complexity when fully covered, complexity² + complexity when untested', () => {
-    expect(crap(6, 1)).toBe(6)
-    expect(crap(6, 0)).toBe(42)
-  })
-
-  it('measures statement coverage inside the function that starts on the reported line', () => {
-    const loc = (l1: number, l2: number) => ({ start: { line: l1, column: 0 }, end: { line: l2, column: 1 } })
-    const cov = {
-      fnMap: { 0: { loc: loc(1, 10) } },
-      statementMap: { 0: loc(2, 2), 1: loc(3, 3), 2: loc(20, 20) },
-      s: { 0: 1, 1: 0, 2: 5 }
-    }
-    expect(functionCoverage(cov, 1)).toBe(0.5)
-    expect(functionCoverage(undefined, 1)).toBe(0)
-  })
-
-  it('baseline lets legacy hits pass but reports all of a file\'s hits once a new one appears', () => {
-    const hit = (file: string) => ({ check: 'CRAP', file, line: 1, message: '', severity: 'error' as const })
+describe('baseline ratchet', () => {
+  it('lets legacy hits pass but reports all of a file\'s hits once a new one appears', () => {
+    const hit = (file: string) => ({ check: 'Console hygiene', file, line: 1, message: '', severity: 'error' as const })
     expect(applyBaseline([hit('a.ts'), hit('a.ts')], { 'a.ts': 2 })).toEqual([])
     expect(applyBaseline([hit('a.ts'), hit('a.ts'), hit('a.ts')], { 'a.ts': 2 })).toHaveLength(3)
     expect(applyBaseline([hit('b.ts')], { 'a.ts': 2 })).toHaveLength(1)

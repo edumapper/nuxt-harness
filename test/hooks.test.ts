@@ -46,6 +46,15 @@ describe('stop — the turn cannot end on a failing branch', () => {
     expect(run('stop', { session_id: 's1', cwd }, cwd).status).toBe(0)
   })
 
+  // Claude Code reports a continuation; if our state file was lost, don't restart at 0.
+  it('counts a stop_hook_active continuation from Claude Code', () => {
+    const cwd = repo(BAD)
+    const r = run('stop', { session_id: 's1', cwd, stop_hook_active: true }, cwd)
+    expect(r.status).toBe(2)
+    const state = JSON.parse(readFileSync(join(cwd, '.harness/stop-state.json'), 'utf8'))
+    expect(state.blocks).toBe(2)
+  })
+
   // An error the agent cannot fix must not trap it in an endless stop loop.
   it('gives up after 3 blocks in a session and warns the user instead', () => {
     const cwd = repo(BAD)
@@ -110,7 +119,7 @@ describe('baseline — legacy static-check errors are recorded once, then can on
     expect(consoleErrors(r)).toEqual([1, 2, 3])
   })
 
-  it('reads a baseline written before static checks were recorded (CRAP only)', () => {
+  it('ignores the legacy crap key in a baseline written before static checks were recorded', () => {
     const cwd = repo({ 'nuxt-harness-baseline.json': '{ "crap": {} }', 'app/utils/x.ts': 'console.log(1)\n' })
     expect(consoleErrors(gate(cwd, 'fast', '--all'))).toEqual([1])
   })

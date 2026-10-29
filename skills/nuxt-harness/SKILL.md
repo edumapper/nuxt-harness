@@ -47,15 +47,41 @@ The file prefix decides what ESLint allows. No discipline required — the gate 
 
 ---
 
+## Before you write — ask the harness
+
+The gate is not only a judge. Two commands give the agent the contract before it produces code:
+
+```bash
+nuxt-harness guide app/components/UserList.vue   # layer + rights + the rules that will judge it
+nuxt-harness explain arch/no-smart-calls         # why the rule exists, what it forbids, its doc
+```
+
+`guide` reads the same `harness()` config the gate uses, so the rule list is the one that will
+actually run. `guide` with no path prints the layer table and the workflow. When a gate finding
+is unclear, `explain <rule>` is faster than reading the whole rules reference.
+
+`npx nuxt-harness init --claude` installs the agent-facing files: `AGENTS.md` (Codex and Claude
+Code), the path-scoped `.claude/rules/nuxt-harness.md`, this skill under `.claude/skills/`, and
+the `PostToolUse`/`Stop` hooks. The instructions are non-deterministic guidance; the hooks are
+the gate the model cannot skip.
+
+---
+
 ## The gate — run it, never suppress it
 
 | Command | When | What | Needs |
 |---|---|---|---|
+| `nuxt-harness init [--claude]` | once per app | `AGENTS.md`, and with `--claude` the rule, skill link and hooks | nothing |
+| `nuxt-harness guide <file>` | before writing or rewriting a file | the layer contract and the rules that will judge it | nothing |
+| `nuxt-harness explain <rule>` | when a finding needs the full reason | scope, what the rule forbids, doc link | nothing |
 | `nuxt-harness fast` | after every edit — hooks run it on the edited file, and on every changed file before a turn ends | static checks + harness ESLint rules on changed files (~1 s) | nothing: no app `node_modules`, no `.nuxt/` |
-| `nuxt-harness full` | before declaring done, and in CI | fast checks on every file + `nuxt typecheck` (and `vue-tsc` on `tools/` / `scripts/`), type-aware ESLint, knip, cspell, jscpd, vitest + CRAP (the tools the app has configured) | the app installed |
+| `nuxt-harness full` | before declaring done, and in CI | fast checks on every file + `nuxt typecheck` (and `vue-tsc` on `tools/` / `scripts/`), type-aware ESLint, knip, cspell, jscpd (the tools the app has configured) | the app installed |
 
-Both print `❌ what → 💡 why → 🛠 fix → 📖 doc` findings and write `.harness/report.json`
-(`--json` prints it). The exit code is non-zero on any error.
+`fast` and `full` print `❌ what → 💡 why → 🛠 fix → 📖 doc` findings and write
+`.harness/report.json` (`--json` prints it). The exit code is non-zero on any error.
+
+The gate never runs the app's tests. It judges code with rules and static analysis: a green test
+suite can coexist with broken code, so tests are not evidence here.
 
 **Fix every error. Do not suppress.** The gate bans its own escape hatches: `@ts-ignore`,
 `@ts-nocheck`, `@ts-expect-error`, blanket `eslint-disable`, any `eslint-disable` of a
@@ -65,7 +91,7 @@ Legacy violations live in two ratchet files. A file passes while its count for a
 below the recorded count; one more violation and all of them report. These files only shrink:
 
 - `eslint-suppressions.json`: ESLint bulk suppressions. Prune with `eslint . --prune-suppressions`.
-- `nuxt-harness-baseline.json`: static-check errors and CRAP hits per file. Rewrite with `nuxt-harness full --update-baseline`
+- `nuxt-harness-baseline.json`: static-check errors per file. Rewrite with `nuxt-harness full --update-baseline`
   after fixing some, never to absorb new ones.
 
 ### Principle → deterministic check
@@ -79,7 +105,7 @@ below the recorded count; one more violation and all of them report. These files
 | Reactivity & SSR | `arch/max-watchers` (≤ 3 per file), no `provide`/`inject`, `navigateTo` awaited or returned, `<ClientOnly>` and `.client` files carry a `ClientOnly: <why>` comment |
 | SSR determinism (invisible to typecheck and curl) | `arch/no-reserved-item-value` (reserved `''` in select items), `arch/no-nondeterministic-key`, `arch/async-data-needs-key`, `arch/no-locale-format-in-render`, `arch/no-browser-api-in-setup`, `arch/no-module-mutable-state`, `arch/timer-needs-scope-dispose`, `arch/no-context-after-await` (context composable after an await during SSR) |
 | Locality | R0–R4 layer rules, import boundaries (`app` ↛ `server`, `server` ↛ `app`, `shared` ↛ both), no event bus, localized links (`navigateTo`, `<NuxtLink>`) with i18n |
-| CRAP | `complexity` ≤ 20; CRAP = c² × (1 − cov)³ + c ≤ 30 per `.ts` function (full gate) |
+| Complexity | `complexity` ≤ 20 per function (ESLint) |
 | Design system (opt-in) | hardcoded colors, palettes the app allows, nested bordered boxes |
 
 ### Layer rules (R0–R4)
@@ -99,6 +125,7 @@ options (i18n, auth composables, data-layer composables, design system).
 1. What concerns does it have?
 2. Does it load data? → Orchestrator. Does it wire Presenters? → Operator. Pure display? → Presenter.
 3. Could a Presenter suffice, or is smart wiring needed?
+4. Run `nuxt-harness guide <path>` — it names the layer, the rights and the rules before you write.
 
 Data + store + template → Orchestrator.
 Wiring Presenters + local state, no data loading → Operator.

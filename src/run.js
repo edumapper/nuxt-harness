@@ -5,11 +5,17 @@
  *   fast  — static checks + harness ESLint rules on changed files. No install of the
  *           app, no `.nuxt/`, ~1–2 s. What agents run after every edit.
  *   full  — fast checks on every file + the app's own toolchain (nuxt typecheck,
- *           type-aware ESLint, knip, cspell, jscpd, vitest + CRAP). Needs the app installed.
+ *           type-aware ESLint, knip, cspell, jscpd). Needs the app installed.
  *   hook  — Claude Code PostToolUse adapter: reads the hook JSON on stdin, runs `fast`
  *           on the edited file, exits 2 with findings on stderr so the agent sees them.
  *   stop  — Claude Code Stop adapter: runs `fast` on every file changed on the branch
  *           (Bash edits included) and blocks the end of the turn while errors remain.
+ *   guide — pre-writing help: the layer contract for a file and the rules that will judge it.
+ *   explain — why a rule exists, what it forbids, and its doc link.
+ *   init — install the agent-facing files (AGENTS.md, optional Claude rule/skill/hooks).
+ *
+ * The gate judges code with rules and static analysis. It never runs the app's tests:
+ * a green suite can coexist with broken code, so tests are not evidence here.
  */
 import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
@@ -17,7 +23,9 @@ import { dirname, isAbsolute, join, relative } from 'node:path'
 
 import { STATIC_CHECKS } from './checks.js'
 import { loadConfig, resolveOptions, sourcePattern } from './config.js'
-import { applyBaseline, baselineFrom, crapFindings } from './crap.js'
+import { applyBaseline, baselineFrom } from './baseline.js'
+import { explainRule, generalGuide, guideFor, ruleIds } from './guide.js'
+import { initProject } from './init.js'
 import { lint } from './lint.js'
 import { eslintFindings, withoutDuplicates } from './tool-report.js'
 
@@ -35,7 +43,6 @@ function dedupe (report, reported) {
 
 const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
 const BASELINE_FILE = 'nuxt-harness-baseline.json'
-const CRAP_CHECK = 'CRAP (complexity × coverage)'
 const MAX_PRINTED = 15
 // A Stop hook that always blocks would loop forever on an error the agent cannot fix.
 const MAX_STOP_BLOCKS = 3
@@ -128,11 +135,11 @@ function fastChecks(root, files, options) {
 }
 
 // ─── Baseline ───────────────────────────────────────────────────────────────
-// nuxt-harness-baseline.json records legacy violations the gate tolerates: CRAP hits and the
-// static checks' errors, as file → count. ESLint keeps its own eslint-suppressions.json.
-/** @typedef {{ crap?: Record<string, number>, checks?: Record<string, Record<string, number>> }} Baseline */
+// nuxt-harness-baseline.json records legacy violations the gate tolerates: the static checks'
+// errors, as file → count. ESLint keeps its own eslint-suppressions.json.
+/** @typedef {{ checks?: Record<string, Record<string, number>> }} Baseline */
 
-const BASELINED = new Set([...STATIC_CHECKS.map(c => c.name), CRAP_CHECK])
+const BASELINED = new Set(STATIC_CHECKS.map(c => c.name))
 
 /** @param {string} root @returns {Baseline} */
 function readBaseline(root) {
@@ -141,7 +148,7 @@ function readBaseline(root) {
 }
 
 /** @param {Baseline} baseline @param {string} name */
-const allowed = (baseline, name) => (name === CRAP_CHECK ? baseline.crap : baseline.checks?.[name]) ?? {}
+const allowed = (baseline, name) => baseline.checks?.[name] ?? {}
 
 /**
  * Records every baselined check's current errors. Rewrites the file: entries only ever shrink
@@ -150,12 +157,11 @@ const allowed = (baseline, name) => (name === CRAP_CHECK ? baseline.crap : basel
  */
 function baselineOf(checks) {
   /** @type {Baseline} */
-  const baseline = { crap: {}, checks: {} }
+  const baseline = { checks: {} }
   for (const c of checks) {
     if (!BASELINED.has(c.name)) continue
     const counts = baselineFrom(c.findings.filter(f => f.severity === 'error'))
-    if (c.name === CRAP_CHECK) baseline.crap = counts
-    else if (Object.keys(counts).length > 0) /** @type {Record<string, Record<string, number>>} */ (baseline.checks)[c.name] = counts
+    if (Object.keys(counts).length > 0) /** @type {Record<string, Record<string, number>>} */ (baseline.checks)[c.name] = counts
   }
   return baseline
 }
@@ -200,13 +206,7 @@ function toolSteps(srcDir, typecheckProjects) {
     { name: PROJECT_ESLINT, bin: 'eslint', args: ['.', '--max-warnings', '0', '--format', 'json'], json: 'eslint' },
     { name: 'Dead code (knip)', bin: 'knip', args: ['--reporter', 'compact'], when: ['knip.json', 'knip.jsonc', 'knip.config.ts'] },
     { name: 'Spelling (cspell)', script: 'check:spell', bin: 'cspell', args: [appGlob, 'server/**/*.ts', 'shared/**/*.ts', '--no-progress'], when: ['cspell.json', 'cspell.config.yaml', '.cspell.json'] },
-    { name: 'Duplicates (jscpd)', bin: 'jscpd', args: ['--config', '.jscpd.json'], when: ['.jscpd.json'] },
-    {
-      name: 'Tests (vitest + coverage)',
-      bin: 'vitest',
-      args: ['run', '--coverage.enabled', '--coverage.reporter=json', '--coverage.reportsDirectory=.harness/coverage'],
-      when: ['ts', 'mts', 'js', 'mjs'].map(ext => `vitest.config.${ext}`)
-    }
+    { name: 'Duplicates (jscpd)', bin: 'jscpd', args: ['--config', '.jscpd.json'], when: ['.jscpd.json'] }
   ]
 }
 
@@ -339,9 +339,7 @@ export async function runGate(mode, { root, files, all, updateBaseline, config, 
     // The app's ESLint config includes the harness rules: report each problem once.
     const tools = (await Promise.all(toolSteps(srcDir, typecheckProjects).map(step => runTool(root, step))))
       .map(t => t.name === PROJECT_ESLINT ? dedupe(t, harnessFindings) : t)
-    // CRAP joins complexity with the coverage the vitest step just wrote.
-    const crapCheck = await timed(CRAP_CHECK, () => crapFindings(root, selected, options))
-    checks = [...checks, ...tools, crapCheck]
+    checks = [...checks, ...tools]
   }
 
   // Only the full gate sees every file, so only it may rewrite the baseline.
@@ -367,6 +365,49 @@ export async function runGate(mode, { root, files, all, updateBaseline, config, 
   }
 }
 
+/** Install the agent-facing files. @param {boolean} claude @param {boolean} dryRun */
+function init(claude, dryRun) {
+  const root = projectRoot(process.cwd())
+  const actions = initProject(root, { claude, dryRun })
+  const out = (/** @type {string} */ s) => process.stdout.write(`${s}\n`)
+  out(`\n  ${bold(`@edumapper/nuxt-harness ${VERSION}`)} ${dim(`— init${dryRun ? ' (dry run)' : ''}, ${root}`)}\n`)
+  for (const a of actions) {
+    const mark = a.status === 'skipped' ? yellow('•') : a.status === 'unchanged' ? dim('·') : green('✓')
+    out(`  ${mark} ${a.file} ${dim(`${a.status}${a.detail ? ` (${a.detail})` : ''}`)}`)
+  }
+  out(`\n  Next: ${dim('nuxt-harness guide app/components/YourComponent.vue')}\n`)
+  return 0
+}
+
+/** Pre-writing help: the layer contract for each file, or the layer table. @param {string[]} args */
+async function guide(args) {
+  const root = projectRoot(process.cwd())
+  if (args.length === 0) {
+    process.stdout.write(`${generalGuide()}\n`)
+    return 0
+  }
+  // The same options the gate resolves, so the rule list matches what will run.
+  const options = { ...(await loadConfig(root)), root }
+  for (const file of args) process.stdout.write(`${guideFor(toRelative(root, file), options)}\n\n`)
+  return 0
+}
+
+/** Why a rule exists and how to satisfy it. @param {string[]} args */
+function explain(args) {
+  const id = args[0]
+  if (!id) {
+    process.stderr.write(`usage: nuxt-harness explain <rule>\n\n${ruleIds().join('\n')}\n`)
+    return 64
+  }
+  const text = explainRule(id)
+  if (!text) {
+    process.stderr.write(`unknown rule: ${id}\n\n${ruleIds().join('\n')}\n`)
+    return 64
+  }
+  process.stdout.write(`${text}\n`)
+  return 0
+}
+
 /** @param {string[]} argv */
 export async function main(argv) {
   const [command = 'fast', ...rest] = argv
@@ -374,12 +415,17 @@ export async function main(argv) {
   const all = rest.includes('--all')
   const updateBaseline = rest.includes('--update-baseline')
   const allowEmpty = rest.includes('--allow-empty')
+  const claude = rest.includes('--claude')
+  const dryRun = rest.includes('--dry-run')
   const files = rest.filter(a => !a.startsWith('--'))
 
   if (command === 'hook') return hook()
   if (command === 'stop') return stop()
+  if (command === 'guide') return guide(files)
+  if (command === 'explain') return explain(files)
+  if (command === 'init') return init(claude, dryRun)
   if (command !== 'fast' && command !== 'full') {
-    process.stderr.write('usage: nuxt-harness <fast [files…] [--all] | full [--update-baseline] | hook | stop> [--json]\n')
+    process.stderr.write('usage: nuxt-harness <fast [files…] [--all] | full [--update-baseline] | guide [files…] | explain <rule> | init [--claude] [--dry-run] | hook | stop> [--json]\n')
     return 64
   }
 
@@ -393,6 +439,7 @@ export async function main(argv) {
     const out = (/** @type {string} */ s) => process.stdout.write(`${s}\n`)
     out(`\n  ${bold(`@edumapper/nuxt-harness ${VERSION}`)} ${dim(`— ${command} gate, ${report.files} files`)}\n`)
     printHuman(report.checks, out)
+    if (report.errors > 0) out(`\n  ${dim('help:')} nuxt-harness guide <file> · nuxt-harness explain <rule>`)
     out(`\n  ${report.passed ? green(bold('✓ passed')) : red(bold(`✗ ${report.errors} errors`))}${report.warnings ? yellow(`  ⚠ ${report.warnings} warnings`) : ''} ${dim(`in ${report.durationMs}ms · .harness/report.json`)}\n`)
   }
   return report.passed ? 0 : 1
@@ -436,6 +483,7 @@ async function hook() {
   if (errors.length === 0) return 0
   process.stderr.write(`nuxt-harness: ${errors.length} error(s) in ${rel} — fix before moving on:\n`)
   writeErrors(errors, false)
+  process.stderr.write('  → nuxt-harness guide <file> · nuxt-harness explain <rule>\n')
   return 2
 }
 
@@ -459,7 +507,12 @@ async function stop() {
   } catch {
     state = {} // first stop of the session, or an unreadable leftover: start counting again
   }
-  const blocks = state.session === input.session_id ? (state.blocks ?? 0) : 0
+  const blocks = state.session === input.session_id
+    ? (state.blocks ?? 0)
+    // Claude Code sets stop_hook_active when this turn is already a continuation from a
+    // previous Stop block. If our state was lost, count that continuation instead of
+    // restarting at 0, so the retry cap still holds.
+    : (input.stop_hook_active === true ? 1 : 0)
   const save = (/** @type {number} */ n) => writeFileSync(statePath, JSON.stringify({ session: input.session_id, blocks: n }))
 
   if (errors.length === 0) {
@@ -474,5 +527,6 @@ async function stop() {
   save(blocks + 1)
   process.stderr.write(`nuxt-harness: ${errors.length} error(s) in files changed on this branch — fix them before finishing (check ${blocks + 1}/${MAX_STOP_BLOCKS}):\n`)
   writeErrors(errors, true)
+  process.stderr.write('  → nuxt-harness guide <file> · nuxt-harness explain <rule>\n')
   return 2
 }

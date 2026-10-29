@@ -134,7 +134,7 @@ export function harness(options) {
         'no-unsafe-finally': 'error',
         // `catch (e) {}` swallows errors — re-throw, log, or comment why silence is intended.
         'no-empty': ['error', { allowEmptyCatch: false }],
-        // Cyclomatic complexity: the C in CRAP. Above this, split the function.
+        // Cyclomatic complexity: above this, split the function.
         'complexity': ['error', 20],
         // Long positional parameter lists are the cheapest SRP smell to detect.
         'max-params': ['error', 4],

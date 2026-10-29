@@ -80,7 +80,7 @@ Principle: use early returns for states that really happen. Don't check states t
 |---|---|
 | `no-unsafe-finally` | `return`/`throw` in `finally` silently discards the in-flight error |
 | `no-empty` (incl. catch) | `catch {}` swallows errors |
-| `complexity: 20` | the C in CRAP. Above it, split the function. |
+| `complexity: 20` | above it, split the function. |
 | `max-params: 4` | the cheapest SRP smell to detect (off in tests) |
 | `no-useless-assignment` | a value that is overwritten or never read before it is replaced: dead code, and often a lost result (`let x = null; try { x = … }`) |
 | `arch/no-figma-asset-url` | expiring Figma MCP asset URLs (`figma.com/api/mcp/asset/…`, `localhost:3845/assets/…`) ship as broken images |

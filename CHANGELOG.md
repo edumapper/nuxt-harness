@@ -6,6 +6,39 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.11.0]
+
+### Added
+
+- `nuxt-harness init [--claude] [--dry-run]`: installs the agent-facing files in the shape Claude
+  Code and Codex expect. `AGENTS.md` (both read it) gets a short, command-first managed block;
+  `--claude` adds a path-scoped `.claude/rules/nuxt-harness.md`, links the shipped skill into
+  `.claude/skills/`, and merges the `PostToolUse`/`Stop` hooks into `.claude/settings.json`.
+  Idempotent, and it never rewrites a `settings.json` it cannot parse. It warns when a
+  `CLAUDE.md` would shadow `AGENTS.md`.
+- `nuxt-harness guide [files…]`: pre-writing help. Given a path, it names the layer, what that
+  layer may and may not do, and the rules the gate will apply — read from the same `harness()`
+  config, so the list cannot drift. Covers the app shell, the Nuxt 3 `srcDir: '.'` layout,
+  type-aware rules (full gate) and the static checks. With no path it prints the layer table and
+  the workflow.
+- `nuxt-harness explain <rule>`: the rule's scope, what it forbids, and the link to its section in
+  the rules reference. Covers every `arch/` rule and the core/plugin rules the harness enables.
+  The gate's human output and the hook/stop messages now point to both commands when an error
+  remains.
+
+### Fixed
+
+- The `Stop` hook counts Claude Code's `stop_hook_active` when its local state is missing, so the
+  retry cap still holds after `.harness/` is cleaned.
+
+### Removed
+
+- The `Tests (vitest + coverage)` step and the CRAP check. The gate now judges the code with rules
+  and static analysis only: it never runs the app's test suite and never reads its coverage. A
+  green suite can coexist with broken code, and coverage rewards tests that execute lines rather
+  than tests that assert behaviour. Complexity is still enforced by ESLint's `complexity: 20`.
+  `nuxt-harness-baseline.json` keeps working; its legacy `crap` key is ignored.
+
 ## [0.10.1]
 
 ### Fixed

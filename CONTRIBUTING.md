@@ -28,7 +28,9 @@ src/config.js           options, defaults, auto-detection, nuxt-harness.config l
 src/eslint.js           flat config: harness(), typeAware(), standalone()
 src/rules/              custom ESLint rules (the `arch/` plugin)
 src/checks.js           static checks (plain file scans)
-src/crap.js             CRAP score from complexity × vitest coverage
+src/baseline.js         ratchet for legacy static-check violations
+src/guide.js            pre-writing help: layer contracts + rule explanations
+src/init.js             AGENTS.md, .claude/rules, skill link and hooks
 skills/nuxt-harness/    agent skill + reference docs (shipped in the package)
 examples/basic/         minimal Nuxt 4 app that must pass the gate
 test/                   vitest: rules (RuleTester), checks, config, CLI hooks, docs
