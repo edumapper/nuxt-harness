@@ -104,6 +104,7 @@ below the recorded count; one more violation and all of them report. These files
 | Guards | `arch/max-condition-operands` (max 2 in `if`/`v-if`/`v-show`), `no-else-return`, `max-depth: 2`, auth gates only in middleware |
 | Reactivity & SSR | `arch/max-watchers` (≤ 3 per file), no `provide`/`inject`, `navigateTo` awaited or returned, `<ClientOnly>` and `.client` files carry a `ClientOnly: <why>` comment |
 | SSR determinism (invisible to typecheck and curl) | `arch/no-reserved-item-value` (reserved `''` in select items), `arch/no-nondeterministic-key`, `arch/async-data-needs-key`, `arch/no-locale-format-in-render`, `arch/no-browser-api-in-setup`, `arch/no-module-mutable-state`, `arch/timer-needs-scope-dispose`, `arch/no-context-after-await` (context composable after an await during SSR) |
+| Time zones | `arch/nuxt-time-needs-time-zone`, `arch/date-format-needs-time-zone` (a date formatted without a `timeZone`), `arch/no-machine-zone-date` (`getHours()`, `toISOString().slice(0, 10)`, date-fns without `in`) |
 | Locality | R0–R4 layer rules, import boundaries (`app` ↛ `server`, `server` ↛ `app`, `shared` ↛ both), no event bus, localized links (`navigateTo`, `<NuxtLink>`) with i18n |
 | Complexity | `complexity` ≤ 20 per function (ESLint) |
 | Design system (opt-in) | hardcoded colors, palettes the app allows, nested bordered boxes |

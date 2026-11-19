@@ -30,12 +30,15 @@ import noPresenterInPage from './rules/no-presenter-in-page.js'
 import noProvideInject from './rules/no-provide-inject.js'
 import noReverseLayerImport from './rules/no-reverse-layer-import.js'
 import noServerUiImport from './rules/no-server-ui-import.js'
+import dateFormatNeedsTimeZone from './rules/date-format-needs-time-zone.js'
+import noMachineZoneDate from './rules/no-machine-zone-date.js'
 import asyncDataNeedsKey from './rules/async-data-needs-key.js'
 import linkNeedsLocalePath from './rules/link-needs-locale-path.js'
 import noContextAfterAwait from './rules/no-context-after-await.js'
 import noRawRequestInput from './rules/no-raw-request-input.js'
 import noBrowserApiInSetup from './rules/no-browser-api-in-setup.js'
 import noLocaleFormatInRender from './rules/no-locale-format-in-render.js'
+import nuxtTimeNeedsTimeZone from './rules/nuxt-time-needs-time-zone.js'
 import noModuleMutableState from './rules/no-module-mutable-state.js'
 import noNondeterministicKey from './rules/no-nondeterministic-key.js'
 import noReservedItemValue from './rules/no-reserved-item-value.js'
@@ -72,6 +75,9 @@ export const arch = {
     'no-raw-request-input': noRawRequestInput,
     'link-needs-locale-path': linkNeedsLocalePath,
     'no-locale-format-in-render': noLocaleFormatInRender,
+    'nuxt-time-needs-time-zone': nuxtTimeNeedsTimeZone,
+    'date-format-needs-time-zone': dateFormatNeedsTimeZone,
+    'no-machine-zone-date': noMachineZoneDate,
     'no-browser-api-in-setup': noBrowserApiInSetup,
     'timer-needs-scope-dispose': timerNeedsScopeDispose,
     'no-module-mutable-state': noModuleMutableState
@@ -273,7 +279,7 @@ export function harness(options) {
       rules: {
         // A key the client cannot reproduce misses the payload cache and refetches.
         'arch/no-nondeterministic-key': 'error',
-        // Locale formatting without a locale, or a date without a time zone, differs between renders.
+        // Locale formatting without a locale differs between renders.
         'arch/no-locale-format-in-render': 'error',
         // Setup runs on the server: a top-level browser read throws or mismatches.
         'arch/no-browser-api-in-setup': 'error',
@@ -304,6 +310,20 @@ export function harness(options) {
       files: [...appSide, ...server, ...shared],
       ignores: [...notOnServer, ...o.clientSingletons],
       rules: { 'arch/no-module-mutable-state': 'error' }
+    },
+
+    // ── Time zones: a day and an hour only mean something in a named zone ─────
+    // The server runs in UTC and every device in its own zone. Code that lets the machine pick
+    // shows another hour, and near midnight counts another day, depending on where it runs.
+    {
+      name: 'nuxt-harness/time-zones',
+      files: [...appSide, ...server, ...shared],
+      ignores: TEST_FILES,
+      rules: {
+        'arch/nuxt-time-needs-time-zone': ['error', { timeZones: o.timeZones }],
+        'arch/date-format-needs-time-zone': ['error', { timeZones: o.timeZones }],
+        'arch/no-machine-zone-date': 'error'
+      }
     },
 
     // ── Design system: opt-in, configured by the app ─────────────────────────
