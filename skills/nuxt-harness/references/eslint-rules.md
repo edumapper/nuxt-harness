@@ -19,7 +19,7 @@ Options are described in [configuration.md](configuration.md).
 
 | Rule | Files | Forbids |
 |---|---|---|
-| `arch/no-presenter-in-page` (R0) <a id="no-presenter-in-page"></a> | `app/pages/**/*.vue` | rendering anything but Orchestrators/Operators, HTML, Vue/Nuxt built-ins (`Nuxt*`) and Nuxt UI atoms (`U*`). Directory-prefixed (`<ShopOrcCart>`), lazy (`<LazyOrcCart>`) and kebab-case names are recognized. |
+| `arch/no-presenter-in-page` (R0) <a id="no-presenter-in-page"></a> | `app/pages/**/*.vue` | rendering anything but Orchestrators/Operators, HTML, Vue/Nuxt built-ins (`Nuxt*`) Nuxt UI atoms (`U*`) and the app's own atoms listed in [`atomComponents`](configuration.md) (e.g. `AppTime`). Directory-prefixed (`<ShopOrcCart>`), lazy (`<LazyOrcCart>`) and kebab-case names are recognized. |
 | `arch/no-smart-calls` (R1/R2) <a id="no-smart-calls"></a> | Presenters | stores (`use*Store`), `useRouter`/`useRoute`/`navigateTo`, `useFetch`/`useAsyncData`/`$fetch`, query primitives (`useQuery`, `useMutation`, …) and the app's `dataComposables` |
 | `arch/no-data-calls-in-operator` (R3) <a id="no-data-calls-in-operator"></a> | `Op*.vue` | raw data primitives (`$fetch`, `useFetch`, `useAsyncData`, `useQuery`, …). Call a composable. |
 | `arch/no-reverse-layer` (R4) | components | upward imports: Presenter → Op/Orc, Op → Orc |

@@ -69,7 +69,9 @@ vueTester.run('no-presenter-in-page', noPresenterInPage, {
     // Pages assemble Orchestrators/Operators; NuxtUI atoms and Nuxt built-ins are treated like HTML.
     { filename: 'app/pages/x.vue', code: sfc('<div><OrcProductList /><OpFilters /><UButton label="a" /><NuxtLinkLocale to="/" /></div>') },
     // Nuxt names: lazy prefix, directory prefix (components/shop/OrcCart.vue), kebab-case tags
-    { filename: 'app/pages/x.vue', code: sfc('<div><LazyOrcProductList /><ShopOrcCart /><orc-product-list /><shop-op-filters /></div>') }
+    { filename: 'app/pages/x.vue', code: sfc('<div><LazyOrcProductList /><ShopOrcCart /><orc-product-list /><shop-op-filters /></div>') },
+    // the app's own atoms, declared with `atomComponents`
+    { filename: 'app/pages/x.vue', code: sfc('<div><AppTime :value="at" where="x" /><app-time :value="at" where="y" /></div>'), options: [{ allow: ['AppTime'] }] }
   ],
   invalid: [
     { filename: 'app/pages/x.vue', code: sfc('<div><ComingSoon /></div>'), errors: 1 },

@@ -5,6 +5,9 @@
  * Pages (pages/**\/*.vue) are assemblers — they may only compose Orchestrators
  * (Orc*.vue) and Operators (Op*.vue).
  *
+ * The `allow` option names the app's own atoms (e.g. `AppTime`, its one wrapper of
+ * <NuxtTime>): like Nuxt UI, they are treated as plain elements.
+ *
  *
  * Enabled by harness() in @edumapper/nuxt-harness/eslint.
  */
@@ -36,9 +39,10 @@ function toPascalCase(name) {
 // <UsersOrcList>) and lazy ones with `Lazy`, so the layer prefix can follow a PascalCase segment.
 const SMART_COMPONENT = /(?:^|[a-z0-9])(?:Orc|Op)[A-Z]/
 
-/** @param {string} name */
-function isAllowedInPage(name) {
+/** @param {string} name @param {Set<string>} atoms */
+function isAllowedInPage(name, atoms) {
   const pascal = toPascalCase(name).replace(/^Lazy(?=[A-Z])/, '')
+  if (atoms.has(pascal)) return true
   if (NATIVE_ELEMENTS.has(name)) return true
   if (VUE_NUXT_BUILTINS.has(name) || VUE_NUXT_BUILTINS.has(pascal)) return true
   if (/^Nuxt[A-Z]/.test(pascal)) return true // NuxtLinkLocale, NuxtTime, NuxtImg…
@@ -55,7 +59,11 @@ export default {
       description: 'Disallow Presenter components in Nuxt page files',
       category: 'Architecture'
     },
-    schema: [],
+    schema: [{
+      type: 'object',
+      properties: { allow: { type: 'array', items: { type: 'string' }, uniqueItems: true } },
+      additionalProperties: false
+    }],
     messages: {
       presenterInPage: [
         '❌ <{{name}}> — Presenter rendered directly in a Page',
@@ -69,6 +77,8 @@ export default {
   },
 
   create(context) {
+    /** @type {Set<string>} */
+    const atoms = new Set((context.options[0]?.allow ?? []).map((/** @type {string} */ name) => toPascalCase(name)))
     // Template nodes are only walked through vue-eslint-parser's template visitor —
     // a top-level `VElement` key is silently never called.
     return context.sourceCode.parserServices?.defineTemplateBodyVisitor?.({
@@ -79,7 +89,7 @@ export default {
           : node
 
         if (!name || typeof name !== 'string') return
-        if (isAllowedInPage(name)) return
+        if (isAllowedInPage(name, atoms)) return
 
         context.report({
           node,

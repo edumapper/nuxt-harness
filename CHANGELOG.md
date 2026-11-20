@@ -21,6 +21,9 @@ All notable changes to this project are documented here. The format follows
   - The new `timeZones` option lists the zones the app displays; a literal zone outside the list
     is reported.
 
+- `atomComponents` option: the app's own atoms (e.g. `AppTime`, a wrapper of `<NuxtTime>`) are allowed in pages by
+  `arch/no-presenter-in-page`, like Nuxt UI components.
+
 ### Changed
 
 - `arch/no-locale-format-in-render` no longer reports a date without a `timeZone`:

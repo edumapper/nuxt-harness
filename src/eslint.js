@@ -243,7 +243,7 @@ export function harness(options) {
     {
       name: 'nuxt-harness/layer-pages',
       files: app('pages/**/*.vue'),
-      rules: { 'arch/no-presenter-in-page': 'error' }
+      rules: { 'arch/no-presenter-in-page': ['error', { allow: o.atomComponents }] }
     },
     {
       name: 'nuxt-harness/layer-presenters',
