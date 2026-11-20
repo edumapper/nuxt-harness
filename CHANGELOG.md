@@ -6,6 +6,29 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Time-zone rules, in `app/**`, `modules/**`, `server/**` and `shared/**`. A day and an hour only
+  mean something in a named zone: the server runs in UTC and every device in its own zone.
+  - `arch/nuxt-time-needs-time-zone`: a `<NuxtTime>` with no `time-zone` prop. `relative` and an
+    object spread are not reported.
+  - `arch/date-format-needs-time-zone`: `toLocaleDateString`, `toLocaleTimeString`,
+    `toLocaleString` on a date and `Intl.DateTimeFormat` without a `timeZone` option, in every
+    file. In template text it asks for `<NuxtTime>`.
+  - `arch/no-machine-zone-date`: local date parts (`getHours()`, `setHours(…)`…),
+    `toISOString().slice(0, 10)`, `new Date(year, month, day)`, `new Date('…T…')` with no offset,
+    and zone-dependent date-fns functions without the `in` option.
+  - The new `timeZones` option lists the zones the app displays; a literal zone outside the list
+    is reported.
+
+- `atomComponents` option: the app's own atoms (e.g. `AppTime`, a wrapper of `<NuxtTime>`) are allowed in pages by
+  `arch/no-presenter-in-page`, like Nuxt UI components.
+
+### Changed
+
+- `arch/no-locale-format-in-render` no longer reports a date without a `timeZone`:
+  `arch/date-format-needs-time-zone` does, and not only in the render path.
+
 ## [0.11.0]
 
 ### Added

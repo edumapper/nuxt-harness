@@ -28,6 +28,8 @@ import { pathToFileURL } from 'node:url'
  * @property {string[]} [allowServerImportsInApp] `~~/server/…` globs that `app/` may import (e.g. shared validators).
  * @property {string[]} [typecheckProjects] Directories with their own tsconfig.json that `nuxt typecheck` does not cover (CLIs, scripts). The full gate typechecks each with vue-tsc, and type-aware ESLint lints them. Default: `tools` and `scripts` when they have a tsconfig.json.
  * @property {boolean} [selectComponents] The app renders Reka-based selects (Nuxt UI, reka-ui, radix-vue): turns on `no-reserved-item-value`. Default: detected from the dependencies.
+ * @property {string[]} [atomComponents] The app's own atoms, allowed in pages like Nuxt UI components (e.g. `['AppTime']`). Default `[]`.
+ * @property {string[]} [timeZones] IANA zones the app displays time in (e.g. `['Europe/Paris', 'UTC']`). A literal zone outside this list, on `<NuxtTime>` or in a `timeZone` option, is reported. Default `[]`: any explicit zone is accepted.
  * @property {string[]} [clientSingletons] Root-relative globs of modules that deliberately hold one browser-side instance for the app's lifetime (written only in the browser). Exempt from `no-module-mutable-state` and `timer-needs-scope-dispose`.
  * @property {false | DesignSystemOptions} [designSystem] Opt-in design-system rules. Default `false`.
  */
@@ -105,6 +107,8 @@ export function resolveOptions(options = {}) {
     typecheckProjects: options.typecheckProjects ?? ['tools', 'scripts'].filter(dir => existsSync(join(root, dir, 'tsconfig.json'))),
     selectComponents: options.selectComponents ?? SELECT_LIBRARIES.some(name => name in deps),
     clientSingletons: options.clientSingletons ?? [],
+    timeZones: options.timeZones ?? [],
+    atomComponents: options.atomComponents ?? [],
     designSystem: ds
       ? {
           palettes: ds.palettes,
