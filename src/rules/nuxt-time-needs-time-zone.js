@@ -10,7 +10,9 @@
  * elsewhere, and near midnight the day is wrong too.
  *
  * Not reported:
- *   - `relative` ("5 minutes ago"): a distance between two instants has no zone;
+ *   - `relative` or `:relative="true"` ("5 minutes ago"): a distance between two instants has
+ *     no zone. A bound `:relative="flag"` is not exempt: when it is false, <NuxtTime> formats an
+ *     absolute date, in the machine's zone;
  *   - an object spread (`v-bind="options"`): the zone may be in it.
  *
  * With the `timeZones` option, a literal zone must be one of the listed ones. A bound expression
@@ -47,8 +49,8 @@ function literalOf (attribute) {
   return undefined
 }
 
-/** `relative`, `:relative="true"`, `:relative="flag"` - anything but a literal `false`. @param {any} attribute */
-const isOn = attribute => !attribute.directive || attribute.value?.expression?.value !== false
+/** `relative` or `:relative="true"`: relative whatever happens. A bound flag may be false. @param {any} attribute */
+const isAlwaysOn = attribute => !attribute.directive || (attribute.value?.expression?.type === 'Literal' && attribute.value.expression.value === true)
 
 /** @type {import('eslint').Rule.RuleModule} */
 export default {
@@ -85,7 +87,7 @@ export default {
         /** @type {any[]} */
         const attributes = node.startTag.attributes
         if (attributes.some(isSpread)) return
-        if (attributes.some(a => nameOf(a) === 'relative' && isOn(a))) return
+        if (attributes.some(a => nameOf(a) === 'relative' && isAlwaysOn(a))) return
         const zone = attributes.find(a => ZONE_PROPS.has(nameOf(a) ?? ''))
         if (!zone) {
           context.report({ node: node.startTag, messageId: 'missing', data: { example: timeZones[0] ?? 'Europe/Paris' } })

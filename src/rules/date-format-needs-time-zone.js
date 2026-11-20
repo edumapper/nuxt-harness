@@ -13,6 +13,10 @@
  * In template text (`{{ … }}`), the rule asks for `<NuxtTime>` instead: it takes the same options
  * as props, renders a `<time>` element and is covered by `nuxt-time-needs-time-zone`.
  *
+ * `toLocaleString` is also a number method, so it is a date when it is called on `new Date(…)`,
+ * on a `const` holding one (`const d = new Date(v); d.toLocaleString('fr-FR')`), or with date
+ * options. A Date in a parameter or a ref cannot be told from a number without types.
+ *
  * Not reported:
  *   - a number (`total.toLocaleString(locale)`): it has no zone;
  *   - `Intl.DateTimeFormat().resolvedOptions()`: reading the device's zone is the point;
@@ -77,6 +81,29 @@ export default {
     const example = timeZones[0] ?? 'Europe/Paris'
 
     /**
+     * The initializer of the `const` an identifier names, or undefined (a parameter, an import,
+     * a `let`, or a template expression, which has no scope).
+     * @param {any} node @returns {any}
+     */
+    function constInit (node) {
+      if (node?.type !== 'Identifier') return undefined
+      try {
+        for (let scope = sourceCode.getScope(node); scope; scope = scope.upper) {
+          const variable = scope.set.get(node.name)
+          if (!variable) continue
+          const def = variable.defs[0]
+          return def?.type === 'Variable' && def.parent?.kind === 'const' ? unwrap(def.node.init) : undefined
+        }
+      } catch {
+        // a template expression has no scope
+      }
+      return undefined
+    }
+
+    /** `new Date(…)`, or a const holding one. @param {any} node */
+    const isDate = node => isNewDate(unwrap(node)) || isNewDate(constInit(unwrap(node)))
+
+    /**
      * The object literal behind `node`: itself, or the `const` it names. Undefined when the rule
      * cannot read it (a parameter, an import, a call).
      * @param {any} node @returns {any}
@@ -129,7 +156,7 @@ export default {
       if (node.type !== 'CallExpression') return undefined
       if (DATE_METHODS.has(name)) return { what: name, options: node.arguments[1] }
       // toLocaleString is also a number method: a date when called on `new Date()` or with date options
-      if (name === 'toLocaleString' && (isNewDate(callee.object) || read(node.arguments[1]).date)) return { what: name, options: node.arguments[1] }
+      if (name === 'toLocaleString' && (isDate(callee.object) || read(node.arguments[1]).date)) return { what: name, options: node.arguments[1] }
       return undefined
     }
 

@@ -123,6 +123,8 @@ vueTester.run('nuxt-time-needs-time-zone', nuxtTimeNeedsTimeZone, {
     // a distance between two instants has no zone
     time('relative'),
     time(':relative="true"'),
+    // a bound flag may be false: then it needs a zone, and with one it is fine
+    time(':relative="showRelative" time-zone="Europe/Paris"'),
     // the zone may be in the spread
     time('v-bind="format"'),
     { filename: 'app/components/EventCard.vue', code: sfc('', '<nuxt-time :datetime="at" time-zone="UTC" />') },
@@ -134,6 +136,8 @@ vueTester.run('nuxt-time-needs-time-zone', nuxtTimeNeedsTimeZone, {
     { ...time('hour="2-digit" minute="2-digit"'), errors: [{ messageId: 'missing' }] },
     { ...time('month="long" day="numeric"'), errors: [{ messageId: 'missing' }] },
     { ...time(':relative="false"'), errors: [{ messageId: 'missing' }] },
+    // when showRelative is false, <NuxtTime> formats an absolute date in the machine's zone
+    { ...time(':relative="showRelative"'), errors: [{ messageId: 'missing' }] },
     // time-zone-name prints the zone's name: it does not choose the zone
     { ...time('time-zone-name="short"'), errors: [{ messageId: 'missing' }] },
     { filename: 'app/components/EventCard.vue', code: sfc('', '<nuxt-time :datetime="at" />'), errors: [{ messageId: 'missing' }] },
@@ -154,6 +158,9 @@ tsTester.run('date-format-needs-time-zone', dateFormatNeedsTimeZone, {
     // a number has no zone
     util('export const count = (n: number) => n.toLocaleString(\'fr-FR\')'),
     util('export const pct = (n: number) => n.toLocaleString(\'fr-FR\', { style: \'percent\' })'),
+    // a const holding a number stays a number
+    util('const total = 1234\nexport const label = () => total.toLocaleString(\'fr-FR\')'),
+    util('export function at (v: string) { const d = new Date(v); return d.toLocaleString(\'fr-FR\', { timeZone: \'Europe/Paris\' }) }'),
     // reading the device's zone is the point
     util('export const deviceZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone'),
     // options the rule cannot read: a parameter, a spread
@@ -166,6 +173,9 @@ tsTester.run('date-format-needs-time-zone', dateFormatNeedsTimeZone, {
     { ...util('export const day = (d: Date) => d.toLocaleDateString(\'fr-FR\')'), errors: [{ messageId: 'missing' }] },
     { ...util('export const time = (d: Date) => d.toLocaleTimeString(\'fr-FR\', { hour: \'2-digit\' })'), errors: [{ messageId: 'missing' }] },
     { ...util('export const at = (v: string) => new Date(v).toLocaleString(\'fr-FR\')'), errors: [{ messageId: 'missing' }] },
+    // a Date held in a const is still a date
+    { ...util('export function at (v: string) { const d = new Date(v); return d.toLocaleString(\'fr-FR\') }'), errors: [{ messageId: 'missing' }] },
+    { ...util('const LAUNCH = new Date(\'2026-09-01T08:00:00Z\')\nexport const label = () => LAUNCH.toLocaleString(\'fr-FR\')'), errors: [{ messageId: 'missing' }] },
     { ...util('export const at = (d: Date) => d.toLocaleString(\'fr-FR\', { day: \'numeric\', hour: \'2-digit\' })'), errors: [{ messageId: 'missing' }] },
     { ...util('const fmt = new Intl.DateTimeFormat(\'fr-FR\', { dateStyle: \'long\' })'), errors: [{ messageId: 'missing' }] },
     { ...util('const fmt = Intl.DateTimeFormat(\'fr-FR\')'), errors: [{ messageId: 'missing' }] },
@@ -211,6 +221,8 @@ tsTester.run('no-machine-zone-date', noMachineZoneDate, {
     // date-fns with the zone named
     util('import { format, startOfDay, isSameDay } from \'date-fns\'\nimport { tz } from \'@date-fns/tz\'\nconst paris = tz(\'Europe/Paris\')\nexport const clock = (d: Date) => format(d, \'HH:mm\', { in: paris })\nexport const start = (d: Date) => startOfDay(d, { in: paris })\nexport const same = (a: Date, b: Date) => isSameDay(a, b, { in: tz(\'Europe/Paris\') })'),
     util('import { format } from \'date-fns\'\nimport { TZDate } from \'@date-fns/tz\'\nexport const clock = (iso: string) => format(new TZDate(iso, \'Europe/Paris\'), \'HH:mm\')'),
+    // a TZDate stored first carries its zone too
+    util('import { format, isSameDay } from \'date-fns\'\nimport { TZDate, tz } from \'@date-fns/tz\'\nexport function clock (iso: string) { const paris = new TZDate(iso, \'Europe/Paris\'); return format(paris, \'HH:mm\') }\nexport function same (a: string, b: Date) { const at = tz(\'Europe/Paris\')(a); return isSameDay(at, b) }'),
     // a local function that only shares the name
     util('const format = (n: number) => String(n)\nexport const label = format(3)'),
     util('import { format } from \'./money\'\nexport const label = format(3)'),

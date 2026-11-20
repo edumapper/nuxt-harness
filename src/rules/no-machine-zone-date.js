@@ -60,10 +60,14 @@ function zoned (node) {
   return ZONED.has(callee?.name) || (callee?.type === 'CallExpression' && ZONED.has(callee.callee?.name))
 }
 
-/** The options name the zone, or cannot be read. @param {any[]} args */
-function namesZone (args) {
+/**
+ * The arguments name the zone, or cannot be read: a TZDate (inline, or a `const` holding one),
+ * an `in` option, a spread.
+ * @param {any[]} args @param {(node: any) => any} constInit
+ */
+function namesZone (args, constInit) {
   return args.some(arg => {
-    if (zoned(arg) || arg.type === 'SpreadElement') return true
+    if (zoned(arg) || zoned(constInit(arg)) || arg.type === 'SpreadElement') return true
     if (arg.type !== 'ObjectExpression') return false
     return arg.properties.some((/** @type {any} */ p) => p.type !== 'Property' || (p.key?.name ?? p.key?.value) === 'in')
   })
@@ -108,6 +112,25 @@ export default {
     }
   },
   create (context) {
+    const { sourceCode } = context
+    /**
+     * The initializer of the `const` an identifier names, or undefined.
+     * @param {any} node @returns {any}
+     */
+    function constInit (node) {
+      if (node?.type !== 'Identifier') return undefined
+      try {
+        for (let scope = sourceCode.getScope(node); scope; scope = scope.upper) {
+          const variable = scope.set.get(node.name)
+          if (!variable) continue
+          const def = variable.defs[0]
+          return def?.type === 'Variable' && def.parent?.kind === 'const' ? def.node.init : undefined
+        }
+      } catch {
+        // a template expression has no scope
+      }
+      return undefined
+    }
     /** Local names of the zone-dependent date-fns functions this file imports. @type {Map<string, string>} */
     const dateFns = new Map()
 
@@ -117,7 +140,7 @@ export default {
         const callee = node.callee
         if (callee.type === 'Identifier') {
           const name = dateFns.get(callee.name)
-          if (name && !namesZone(node.arguments)) context.report({ node, messageId: 'dateFns', data: { name } })
+          if (name && !namesZone(node.arguments, constInit)) context.report({ node, messageId: 'dateFns', data: { name } })
           return
         }
         if (callee.type !== 'MemberExpression' || callee.computed) return
