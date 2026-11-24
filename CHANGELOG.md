@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.12.0]
+
 ### Added
 
 - Time-zone rules, in `app/**`, `modules/**`, `server/**` and `shared/**`. A day and an hour only

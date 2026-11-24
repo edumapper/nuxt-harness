@@ -1,6 +1,6 @@
 {
   "name": "@edumapper/nuxt-harness",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "description": "Deterministic quality gate for Nuxt 4 apps: 5-layer architecture ESLint rules, guard and locality checks, pre-writing guidance, a no-install fast mode and Claude Code hooks for AI agents.",
   "keywords": [
     "nuxt",
